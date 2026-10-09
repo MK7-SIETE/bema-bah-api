@@ -8,10 +8,15 @@ class Car extends Model
 {
     protected $fillable = [
         'user_id',
+        'listing_type',
         'make',
         'model',
         'year',
         'price',
+        'rental_price_per_day',
+        'location',
+        'source_country',
+        'is_classic',
         'mileage',
         'fuel',
         'transmission',
@@ -24,6 +29,10 @@ class Car extends Model
         'seats',
         'doors',
         'drive',
+        'drive_side',
+        'vin',
+        'previous_owners',
+        'registration_status',
         'description',
         'features',
         'is_featured',
@@ -34,7 +43,17 @@ class Car extends Model
         'features'     => 'array',
         'is_featured'  => 'boolean',
         'is_available' => 'boolean',
+        'is_classic'   => 'boolean',
     ];
+
+    // Included automatically whenever a car is returned as JSON.
+    protected $appends = ['vehicle_code'];
+
+    // Shown to dealers and inside enquiries, e.g. BB-0012.
+    public function getVehicleCodeAttribute(): string
+    {
+        return sprintf('BB-%04d', $this->id);
+    }
 
     public function images()
     {

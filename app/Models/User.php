@@ -15,7 +15,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-        'role',       // dealer | super
+        'role',       // dealer | super | rental_admin
         'is_active',
     ];
 
@@ -29,6 +29,7 @@ class User extends Authenticatable
 
     public function isDealer(): bool  { return $this->role === 'dealer'; }
     public function isSuper(): bool   { return $this->role === 'super'; }
+    public function isRentalAdmin(): bool { return $this->role === 'rental_admin'; }
     public function isActive(): bool  { return $this->is_active; }
 
     public function cars()
