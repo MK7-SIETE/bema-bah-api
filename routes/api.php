@@ -15,6 +15,8 @@ use App\Http\Controllers\Api\SecurityLogController;
 use App\Http\Controllers\Api\SubscriberController;
 use App\Http\Controllers\Api\NewsletterController;
 use App\Http\Controllers\Api\NoticeController;
+use App\Http\Controllers\Api\RentalCarController;
+use App\Http\Controllers\Api\RentalRequestController;
 
 
 // ── Public routes ──────────────────────────────────────────────
@@ -23,6 +25,9 @@ Route::get('cars',               [CarController::class, 'index']);
 Route::get('cars/featured/list', [CarController::class, 'featured']);
 Route::get('cars/{car}',         [CarController::class, 'show']);
 Route::post('messages',          [MessageController::class, 'store']);
+Route::get('rentals',            [RentalCarController::class, 'publicIndex']);
+Route::get('rentals/{car}',      [RentalCarController::class, 'publicShow']);
+Route::post('rental-requests',   [RentalRequestController::class, 'store'])->middleware('throttle:6,1');
 Route::get('hero-images',        [HeroImageController::class, 'index']);
 Route::get('testimonials',       [TestimonialController::class, 'index']);
 Route::post('testimonials',      [TestimonialController::class, 'store']);
@@ -68,6 +73,31 @@ Route::middleware(['auth:sanctum', 'dealer.auth'])->prefix('dealer')->group(func
     Route::put('profile', [ProfileController::class, 'update']);
 });
 
+// ── Rental admin auth ──────────────────────────────────────────
+Route::post('rental/login',  [AuthController::class, 'rentalLogin'])->middleware('throttle:10,1');
+Route::post('rental/logout', [AuthController::class, 'rentalLogout'])->middleware(['auth:sanctum', 'rental.auth']);
+
+// ── Rental admin protected routes ──────────────────────────────
+Route::middleware(['auth:sanctum', 'rental.auth'])->prefix('rental')->group(function () {
+    Route::get('me', [AuthController::class, 'rentalMe']);
+
+    // Rental cars
+    Route::get('cars',                [RentalCarController::class, 'index']);
+    Route::post('cars',               [RentalCarController::class, 'store']);
+    Route::put('cars/{car}',          [RentalCarController::class, 'update']);
+    Route::delete('cars/{car}',       [RentalCarController::class, 'destroy']);
+    Route::patch('cars/{car}/toggle', [RentalCarController::class, 'toggle']);
+
+    // Car images
+    Route::post('cars/{car}/images',         [ImageController::class, 'upload']);
+    Route::delete('cars/{car}/images/{img}', [ImageController::class, 'destroy']);
+    Route::post('cars/{car}/images/reorder', [ImageController::class, 'reorder']);
+
+    // Requests forwarded to me
+    Route::get('requests',                           [RentalRequestController::class, 'rentalIndex']);
+    Route::patch('requests/{rentalRequest}/status',  [RentalRequestController::class, 'rentalStatus']);
+});
+
 // ── Super admin auth ───────────────────────────────────────────
 Route::post('super/login',  [AuthController::class, 'superLogin']);
 Route::post('super/logout', [AuthController::class, 'superLogout'])->middleware(['auth:sanctum', 'super.auth']);
@@ -93,6 +123,18 @@ Route::middleware(['auth:sanctum', 'super.auth'])->prefix('super')->group(functi
     Route::post('dealers',               [SuperAdminController::class, 'createDealer']);
     Route::patch('dealers/{id}/suspend', [SuperAdminController::class, 'suspend']);
     Route::delete('dealers/{id}',        [SuperAdminController::class, 'deleteDealer']);
+
+    // Rental admin management
+    Route::get('rental-admins',                  [SuperAdminController::class, 'rentalAdmins']);
+    Route::post('rental-admins',                 [SuperAdminController::class, 'createRentalAdmin']);
+    Route::put('rental-admins/{id}',             [SuperAdminController::class, 'updateRentalAdmin']);
+    Route::patch('rental-admins/{id}/suspend',   [SuperAdminController::class, 'suspendRentalAdmin']);
+    Route::delete('rental-admins/{id}',          [SuperAdminController::class, 'deleteRentalAdmin']);
+
+    // Rental requests
+    Route::get('rental-requests',                           [RentalRequestController::class, 'superIndex']);
+    Route::patch('rental-requests/{rentalRequest}/forward', [RentalRequestController::class, 'forward']);
+    Route::patch('rental-requests/{rentalRequest}/status',  [RentalRequestController::class, 'superStatus']);
 
     // Full data access
     Route::get('cars',                      [CarController::class,     'superIndex']);

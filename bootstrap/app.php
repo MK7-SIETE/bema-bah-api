@@ -13,8 +13,12 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->use([
+            \Illuminate\Http\Middleware\TrustProxies::class,
             \Illuminate\Http\Middleware\HandleCors::class,
         ]);
+
+        // Render sits behind a proxy; trust it so request->ip() is the real visitor.
+        $middleware->trustProxies(at: '*');
 
         $middleware->validateCsrfTokens(except: [
             'api/*',
@@ -23,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'dealer.auth' => \App\Http\Middleware\DealerAuth::class,
             'super.auth'  => \App\Http\Middleware\SuperAuth::class,
+            'rental.auth' => \App\Http\Middleware\RentalAuth::class,
         ]);
 
         // Tell Sanctum to use token auth for API routes

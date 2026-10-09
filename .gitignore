@@ -18,6 +18,18 @@ yarn-error.log
 /.nova
 /.vscode
 *.sqlite
-"storage/framework/sessions/*" 
-"storage/logs/*.log" 
-"!storage/logs/.gitkeep" 
+
+# Runtime files Laravel creates by itself (keep only the .gitkeep placeholders)
+/storage/app/public/*
+!/storage/app/public/.gitkeep
+/storage/framework/cache/data/*
+!/storage/framework/cache/data/.gitkeep
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitkeep
+/storage/framework/views/*
+!/storage/framework/views/.gitkeep
+/storage/logs/*
+!/storage/logs/.gitkeep
+
+# Uploaded images live on Cloudinary, never in Git
+/public/uploads/*

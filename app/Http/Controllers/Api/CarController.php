@@ -11,7 +11,7 @@ class CarController extends Controller
     // ── PUBLIC: browse cars ────────────────────────────
     public function index(Request $request)
     {
-        $query = Car::with('images')->where('is_available', true);
+        $query = Car::with('images')->where('is_available', true)->where('listing_type', 'sale');
 
         if ($request->search) {
             $s = '%' . $request->search . '%';
@@ -44,6 +44,7 @@ class CarController extends Controller
     {
         $cars = Car::with('images')
                    ->where('is_available', true)
+                   ->where('listing_type', 'sale')
                    ->where('is_featured', true)
                    ->latest()
                    ->limit(6)

@@ -14,6 +14,7 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'phone',
         'password',
         'role',       // dealer | super | rental_admin
         'is_active',
@@ -31,6 +32,19 @@ class User extends Authenticatable
     public function isSuper(): bool   { return $this->role === 'super'; }
     public function isRentalAdmin(): bool { return $this->role === 'rental_admin'; }
     public function isActive(): bool  { return $this->is_active; }
+
+    // Digits-only number ready for wa.me links. Local Zambian 0XXXXXXXXX becomes 260XXXXXXXXX.
+    public function whatsappNumber(): ?string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $this->phone);
+        if ($digits === '') {
+            return null;
+        }
+        if (str_starts_with($digits, '0') && strlen($digits) === 10) {
+            $digits = '260' . substr($digits, 1);
+        }
+        return $digits;
+    }
 
     public function cars()
     {

@@ -150,4 +150,56 @@ $token =    $user->createToken('super-token', ['super'])->plainTextToken;
     {
         return response()->json($request->user());
     }
+
+    // ── Rental admin login ─────────────────────────────
+    public function rentalLogin(Request $request)
+    {
+        $request->validate([
+            'email'    => ['required', 'email'],
+            'password' => ['required'],
+        ]);
+
+        $user = User::where('email', $request->email)
+                    ->where('role', 'rental_admin')
+                    ->first();
+
+        if (! $user || ! Hash::check($request->password, $user->password)) {
+            $this->logSecurityEvent('login_fail', null, $request, ['email' => $request->email, 'role' => 'rental_admin']);
+            throw ValidationException::withMessages([
+                'email' => ['Invalid email or password.'],
+            ]);
+        }
+
+        if (! $user->is_active) {
+            $this->logSecurityEvent('login_fail', $user->id, $request, ['reason' => 'account_suspended']);
+            return response()->json(['message' => 'Account suspended. Contact your administrator.'], 403);
+        }
+
+        $user->tokens()->delete();
+        $token = $user->createToken('rental-token', ['rental'])->plainTextToken;
+        $this->logSecurityEvent('login_success', $user->id, $request);
+
+        return response()->json([
+            'token' => $token,
+            'user'  => [
+                'id'    => $user->id,
+                'name'  => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'role'  => $user->role,
+            ],
+        ]);
+    }
+
+    public function rentalLogout(Request $request)
+    {
+        $this->logSecurityEvent('logout', $request->user()->id, $request);
+        $request->user()->currentAccessToken()->delete();
+        return response()->json(['message' => 'Logged out.']);
+    }
+
+    public function rentalMe(Request $request)
+    {
+        return response()->json($request->user());
+    }
 }

@@ -53,6 +53,65 @@ class SuperAdminController extends Controller
         return response()->json(['message' => 'Dealer account deleted.']);
     }
 
+    // ── Rental admins ──────────────────────────────────
+    public function rentalAdmins()
+    {
+        return response()->json(
+            User::where('role', 'rental_admin')->orderBy('created_at', 'desc')->get()
+        );
+    }
+
+    public function createRentalAdmin(Request $request)
+    {
+        $data = $request->validate([
+            'name'     => ['required', 'string', 'max:200'],
+            'email'    => ['required', 'email', 'unique:users'],
+            'phone'    => ['required', 'string', 'max:30'],
+            'password' => ['required', 'string', 'min:8'],
+        ]);
+
+        $user = User::create([
+            'name'      => $data['name'],
+            'email'     => $data['email'],
+            'phone'     => $data['phone'],
+            'password'  => Hash::make($data['password']),
+            'role'      => 'rental_admin',
+            'is_active' => true,
+        ]);
+
+        return response()->json($user, 201);
+    }
+
+    public function updateRentalAdmin(Request $request, int $id)
+    {
+        $user = User::where('role', 'rental_admin')->findOrFail($id);
+
+        $data = $request->validate([
+            'name'  => ['sometimes', 'string', 'max:200'],
+            'phone' => ['sometimes', 'string', 'max:30'],
+        ]);
+
+        $user->update($data);
+        return response()->json($user);
+    }
+
+    public function suspendRentalAdmin(int $id)
+    {
+        $user = User::where('role', 'rental_admin')->findOrFail($id);
+        $user->update(['is_active' => ! $user->is_active]);
+        return response()->json([
+            'message'   => $user->is_active ? 'Account activated.' : 'Account suspended.',
+            'is_active' => $user->is_active,
+        ]);
+    }
+
+    public function deleteRentalAdmin(int $id)
+    {
+        $user = User::where('role', 'rental_admin')->findOrFail($id);
+        $user->delete(); // their rental cars are deleted with them
+        return response()->json(['message' => 'Rental admin account deleted.']);
+    }
+
     public function getConfig()
     {
         return response()->json(SiteConfig::all_config());
