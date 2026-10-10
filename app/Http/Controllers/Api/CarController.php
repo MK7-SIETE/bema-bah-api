@@ -4,33 +4,44 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Car;
+use App\Services\CarImageService;
+use App\Support\CarInput;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class CarController extends Controller
 {
-    // ── PUBLIC: browse cars ────────────────────────────
+    // ── PUBLIC: browse cars for sale ───────────────────
     public function index(Request $request)
     {
         $query = Car::with('images')->where('is_available', true)->where('listing_type', 'sale');
 
         if ($request->search) {
             $s = '%' . $request->search . '%';
-            $query->where(function($q) use ($s) {
+            $query->where(function ($q) use ($s) {
                 $q->where('make', 'like', $s)
                   ->orWhere('model', 'like', $s)
                   ->orWhere('body_type', 'like', $s)
                   ->orWhere('fuel', 'like', $s);
             });
         }
-        if ($request->make)         $query->where('make', $request->make);
-        if ($request->body_type)    $query->where('body_type', $request->body_type);
-        if ($request->fuel)         $query->where('fuel', $request->fuel);
-        if ($request->transmission) $query->where('transmission', $request->transmission);
-        if ($request->min_price)    $query->where('price', '>=', $request->min_price);
-        if ($request->max_price)    $query->where('price', '<=', $request->max_price);
+        if ($request->make)           $query->where('make', $request->make);
+        if ($request->body_type)      $query->where('body_type', $request->body_type);
+        if ($request->fuel)           $query->where('fuel', $request->fuel);
+        if ($request->transmission)   $query->where('transmission', $request->transmission);
+        if ($request->source_country) $query->where('source_country', $request->source_country);
+        if ($request->min_price)      $query->where('price', '>=', $request->min_price);
+        if ($request->max_price)      $query->where('price', '<=', $request->max_price);
+        if ($request->boolean('classic')) $query->where('is_classic', true);
 
-        $cars = $query->latest()->get();
-        return response()->json($cars);
+        return response()->json($query->latest()->get());
+    }
+
+    // ── PUBLIC: classic cars section ───────────────────
+    public function classics(Request $request)
+    {
+        $request->merge(['classic' => 1]);
+        return $this->index($request);
     }
 
     // ── PUBLIC: single car ─────────────────────────────
@@ -63,36 +74,33 @@ class CarController extends Controller
         );
     }
 
-    // ── DEALER: create car ─────────────────────────────
-    public function store(Request $request)
+    // ── DEALER: create car (details and photos in ONE request) ──
+    public function store(Request $request, CarImageService $images)
     {
-        $data = $request->validate([
-            'make'         => ['required', 'string', 'max:100'],
-            'model'        => ['required', 'string', 'max:100'],
-            'year'         => ['required', 'integer', 'min:1990', 'max:2030'],
-            'price'        => ['required', 'integer', 'min:0'],
-            'mileage'      => ['nullable', 'integer', 'min:0'],
-            'fuel'         => ['required', 'string', 'max:50'],
-            'transmission' => ['required', 'string', 'max:50'],
-            'color'        => ['nullable', 'string', 'max:80'],
-            'body_type'    => ['required', 'string', 'max:80'],
-            'condition'    => ['required', 'string', 'max:80'],
-            'engine'       => ['nullable', 'string', 'max:80'],
-            'power'        => ['nullable', 'string', 'max:80'],
-            'torque'       => ['nullable', 'string', 'max:80'],
-            'seats'        => ['nullable', 'integer', 'min:1', 'max:20'],
-            'doors'        => ['nullable', 'integer', 'min:1', 'max:10'],
-            'drive'        => ['nullable', 'string', 'max:20'],
-            'description'  => ['nullable', 'string'],
-            'features'     => ['nullable', 'array'],
-            'features.*'   => ['string'],
-            'is_featured'  => ['boolean'],
-            'is_available' => ['boolean'],
-        ]);
+        $data = $request->validate($this->rules(true) + CarImageService::rules(false));
 
-        $data['user_id'] = $request->user()->id;
+        $files = $request->file('images', []);
+        unset($data['images']);
+
+        $data = CarInput::clean($data);
+        $data['user_id']      = $request->user()->id;
+        $data['listing_type'] = 'sale';
+        $data['mileage']      = $data['mileage'] ?? 0;
 
         $car = Car::create($data);
+
+        if (! empty($files)) {
+            try {
+                $images->upload($car, $files);
+            } catch (\RuntimeException $e) {
+                // All or nothing: do not leave a car without the photos the dealer chose.
+                $car->delete();
+                return response()->json([
+                    'message' => 'The car was not saved because its photos could not be uploaded. ' . $e->getMessage(),
+                ], 500);
+            }
+        }
+
         return response()->json($car->load('images'), 201);
     }
 
@@ -103,46 +111,22 @@ class CarController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $data = $request->validate([
-            'make'         => ['sometimes', 'string', 'max:100'],
-            'model'        => ['sometimes', 'string', 'max:100'],
-            'year'         => ['sometimes', 'integer', 'min:1990', 'max:2030'],
-            'price'        => ['sometimes', 'integer', 'min:0'],
-            'mileage'      => ['nullable', 'integer', 'min:0'],
-            'fuel'         => ['sometimes', 'string', 'max:50'],
-            'transmission' => ['sometimes', 'string', 'max:50'],
-            'color'        => ['nullable', 'string', 'max:80'],
-            'body_type'    => ['sometimes', 'string', 'max:80'],
-            'condition'    => ['sometimes', 'string', 'max:80'],
-            'engine'       => ['nullable', 'string', 'max:80'],
-            'power'        => ['nullable', 'string', 'max:80'],
-            'torque'       => ['nullable', 'string', 'max:80'],
-            'seats'        => ['nullable', 'integer'],
-            'doors'        => ['nullable', 'integer'],
-            'drive'        => ['nullable', 'string', 'max:20'],
-            'description'  => ['nullable', 'string'],
-            'features'     => ['nullable', 'array'],
-            'features.*'   => ['string'],
-            'is_featured'  => ['boolean'],
-            'is_available' => ['boolean'],
-        ]);
+        $data = CarInput::clean($request->validate($this->rules(false)));
 
         $car->update($data);
         return response()->json($car->load('images'));
     }
 
-    // ── DEALER: delete car ─────────────────────────────
-    public function destroy(Request $request, Car $car)
+    // ── DEALER: delete car (and its photos on Cloudinary) ──
+    public function destroy(Request $request, Car $car, CarImageService $images)
     {
         if ($car->user_id !== $request->user()->id) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        foreach ($car->images as $img) {
-            \Illuminate\Support\Facades\Storage::disk('public')->delete($img->path);
-            $img->delete();
-        }
-        $car->delete();
+        $images->deleteAllFor($car);
+        $car->delete(); // image rows are removed with the car
+
         return response()->json(['message' => 'Car deleted.']);
     }
 
@@ -153,7 +137,7 @@ class CarController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $car->update(['is_available' => !$car->is_available]);
+        $car->update(['is_available' => ! $car->is_available]);
         return response()->json($car);
     }
 
@@ -165,5 +149,40 @@ class CarController extends Controller
                ->latest()
                ->get()
         );
+    }
+
+    private function rules(bool $creating): array
+    {
+        $req = $creating ? 'required' : 'sometimes';
+
+        return [
+            'make'                => [$req, 'string', 'max:100'],
+            'model'               => [$req, 'string', 'max:100'],
+            'year'                => [$req, 'integer', 'min:1900', 'max:' . ((int) date('Y') + 1)],
+            'price'               => [$req, 'integer', 'min:0'],
+            'mileage'             => ['nullable', 'integer', 'min:0'],
+            'fuel'                => [$req, 'string', 'max:50'],
+            'transmission'        => [$req, 'string', 'max:50'],
+            'color'               => ['nullable', 'string', 'max:80'],
+            'body_type'           => [$req, 'string', Rule::in(Car::BODY_TYPES)],
+            'condition'           => [$req, 'string', 'max:80'],
+            'engine'              => ['nullable', 'string', 'max:80'],
+            'power'               => ['nullable', 'string', 'max:80'],
+            'torque'              => ['nullable', 'string', 'max:80'],
+            'seats'               => ['nullable', 'integer', 'min:1', 'max:60'],
+            'doors'               => ['nullable', 'integer', 'min:1', 'max:10'],
+            'drive'               => ['nullable', 'string', 'max:20'],
+            'drive_side'          => ['nullable', 'string', 'max:40'],
+            'vin'                 => ['nullable', 'string', 'max:30'],
+            'previous_owners'     => ['nullable', 'integer', 'min:0', 'max:20'],
+            'registration_status' => ['nullable', 'string', 'max:60'],
+            'source_country'      => ['nullable', Rule::in(Car::SOURCE_COUNTRIES)],
+            'is_classic'          => ['boolean'],
+            'description'         => ['nullable', 'string', 'max:5000'],
+            'features'            => ['nullable', 'array'],
+            'features.*'          => ['string'],
+            'is_featured'         => ['boolean'],
+            'is_available'        => ['boolean'],
+        ];
     }
 }

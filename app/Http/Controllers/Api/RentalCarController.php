@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Car;
+use App\Services\CarImageService;
+use App\Support\CarInput;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class RentalCarController extends Controller
 {
@@ -50,10 +53,14 @@ class RentalCarController extends Controller
         );
     }
 
-    public function store(Request $request)
+    public function store(Request $request, CarImageService $images)
     {
-        $data = $request->validate($this->rules(true));
+        $data = $request->validate($this->rules(true) + CarImageService::rules(false));
 
+        $files = $request->file('images', []);
+        unset($data['images']);
+
+        $data = CarInput::clean($data);
         $data['user_id']      = $request->user()->id;
         $data['listing_type'] = 'rental';
         $data['price']        = null;
@@ -61,6 +68,18 @@ class RentalCarController extends Controller
         $data['condition']    = $data['condition'] ?? 'Used';
 
         $car = Car::create($data);
+
+        if (! empty($files)) {
+            try {
+                $images->upload($car, $files);
+            } catch (\RuntimeException $e) {
+                $car->delete();
+                return response()->json([
+                    'message' => 'The car was not saved because its photos could not be uploaded. ' . $e->getMessage(),
+                ], 500);
+            }
+        }
+
         return response()->json($car->load('images'), 201);
     }
 
@@ -70,24 +89,20 @@ class RentalCarController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $data = $request->validate($this->rules(false));
-
-        if (array_key_exists('mileage', $data))   $data['mileage'] = $data['mileage'] ?? 0;
-        if (array_key_exists('condition', $data) && $data['condition'] === null) unset($data['condition']);
+        $data = CarInput::clean($request->validate($this->rules(false)));
 
         $car->update($data);
         return response()->json($car->load('images'));
     }
 
-    public function destroy(Request $request, Car $car)
+    public function destroy(Request $request, Car $car, CarImageService $images)
     {
         if (! $this->owns($request, $car)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        // Note: photos stored on Cloudinary are cleaned up in a later patch.
-        $car->images()->delete();
-        $car->delete();
+        $images->deleteAllFor($car);
+        $car->delete(); // image rows are removed with the car
         return response()->json(['message' => 'Rental car deleted.']);
     }
 
@@ -116,7 +131,7 @@ class RentalCarController extends Controller
             'year'                 => [$req, 'integer', 'min:1900', 'max:' . ((int) date('Y') + 1)],
             'rental_price_per_day' => [$req, 'integer', 'min:1'],
             'location'             => [$req, 'string', 'max:150'],
-            'body_type'            => [$req, 'string', 'max:80'],
+            'body_type'            => [$req, 'string', Rule::in(Car::BODY_TYPES)],
             'fuel'                 => [$req, 'string', 'max:50'],
             'transmission'         => [$req, 'string', 'max:50'],
             'condition'            => ['nullable', 'string', 'max:80'],

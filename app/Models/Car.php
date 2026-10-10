@@ -6,6 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class Car extends Model
 {
+    // Each body type has its own icon on the site.
+    public const BODY_TYPES = [
+        'Sedan', 'SUV', 'Pickup', 'Van', 'Minibus',
+        'Hatchback', 'Coupe', 'Wagon', 'Convertible', 'Truck',
+    ];
+
+    public const SOURCE_COUNTRIES = ['Local', 'Australia', 'UAE', 'South Africa'];
+
     protected $fillable = [
         'user_id',
         'listing_type',
@@ -50,9 +58,23 @@ class Car extends Model
     protected $appends = ['vehicle_code'];
 
     // Shown to dealers and inside enquiries, e.g. BB-0012.
-    public function getVehicleCodeAttribute(): string
+    public function getVehicleCodeAttribute(): ?string
     {
-        return sprintf('BB-%04d', $this->id);
+        return $this->id ? sprintf('BB-%04d', $this->id) : null;
+    }
+
+    // Accepts "Right-hand drive (RHD)", "rhd", "LHD" ... and stores RHD or LHD.
+    public function setDriveSideAttribute($value): void
+    {
+        $text = strtoupper((string) $value);
+
+        if (str_contains($text, 'RHD')) {
+            $this->attributes['drive_side'] = 'RHD';
+        } elseif (str_contains($text, 'LHD')) {
+            $this->attributes['drive_side'] = 'LHD';
+        } else {
+            $this->attributes['drive_side'] = $value === '' ? null : $value;
+        }
     }
 
     public function images()

@@ -24,6 +24,14 @@ RUN chmod +x /usr/local/bin/start.sh
 # Set permissions
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
+# PHP's defaults (2 MB per file, 8 MB per request) reject normal car photos.
+RUN { \
+      echo "upload_max_filesize=6M"; \
+      echo "post_max_size=100M"; \
+      echo "max_file_uploads=20"; \
+      echo "memory_limit=256M"; \
+    } > /usr/local/etc/php/conf.d/uploads.ini
+
 EXPOSE 10000
 
 CMD ["/usr/local/bin/start.sh"]
