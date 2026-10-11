@@ -6,25 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\Car;
 use App\Services\CarImageService;
 use App\Support\CarInput;
+use App\Support\CarSearch;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\Rule;
 
 class CarController extends Controller
 {
-    // ── PUBLIC: browse cars for sale ───────────────────
+    // ── PUBLIC: browse cars for sale (typo-tolerant search + "load more" paging) ──
     public function index(Request $request)
     {
-        $query = Car::with('images')->where('is_available', true)->where('listing_type', 'sale');
+        $query = Car::where('is_available', true)->where('listing_type', 'sale');
 
-        if ($request->search) {
-            $s = '%' . $request->search . '%';
-            $query->where(function ($q) use ($s) {
-                $q->where('make', 'like', $s)
-                  ->orWhere('model', 'like', $s)
-                  ->orWhere('body_type', 'like', $s)
-                  ->orWhere('fuel', 'like', $s);
-            });
-        }
         if ($request->make)           $query->where('make', $request->make);
         if ($request->body_type)      $query->where('body_type', $request->body_type);
         if ($request->fuel)           $query->where('fuel', $request->fuel);
@@ -34,7 +28,12 @@ class CarController extends Controller
         if ($request->max_price)      $query->where('price', '<=', $request->max_price);
         if ($request->boolean('classic')) $query->where('is_classic', true);
 
-        return response()->json($query->latest()->get());
+        // SETTING 3: cars per batch for customers (12 by default, never more than 48)
+        $perPage = min(max((int) $request->input('per_page', 12), 1), 48);
+
+        return response()->json(
+            $this->searchAndPaginate($query, $request, $perPage, ['images'])
+        );
     }
 
     // ── PUBLIC: classic cars section ───────────────────
@@ -63,14 +62,14 @@ class CarController extends Controller
         return response()->json($cars);
     }
 
-    // ── DEALER: all cars scoped to this dealer ─────────
+    // ── DEALER: this dealer's cars (search by text or vehicle ID, page numbers) ──
     public function dealerIndex(Request $request)
     {
+        $query = Car::where('user_id', $request->user()->id);
+
+        // SETTING 4: cars per page in the staff lists
         return response()->json(
-            Car::with('images')
-               ->where('user_id', $request->user()->id)
-               ->latest()
-               ->get()
+            $this->searchAndPaginate($query, $request, 15, ['images'], true)
         );
     }
 
@@ -141,14 +140,55 @@ class CarController extends Controller
         return response()->json($car);
     }
 
-    // ── SUPER: all cars across all dealers ─────────────
-    public function superIndex()
+    // ── SUPER: all cars across all dealers (search by text or vehicle ID, page numbers) ──
+    public function superIndex(Request $request)
     {
         return response()->json(
-            Car::with(['images', 'user:id,name,email'])
-               ->latest()
-               ->get()
+            $this->searchAndPaginate(Car::query(), $request, 15, ['images', 'user:id,name,email'], true)
         );
+    }
+
+    /**
+     * Shared search + paging.
+     *
+     *  - no search text      -> newest first, paged by MySQL
+     *  - $staff and the text looks like a vehicle ID (BB-0012) -> that exact car
+     *  - otherwise           -> typo-tolerant search, best match first, paged
+     *
+     * Always returns the same shape: { data: [...], current_page, last_page, per_page, total, ... }
+     * Customers use "load more": ask for ?page=2 while current_page < last_page.
+     */
+    private function searchAndPaginate(
+        Builder $query,
+        Request $request,
+        int $perPage,
+        array $with = [],
+        bool $staff = false
+    ): LengthAwarePaginator {
+        $term = trim((string) $request->input('search', ''));
+        $page = max(1, (int) $request->input('page', 1));
+
+        if ($term === '') {
+            return $query->with($with)->latest()->paginate($perPage)->withQueryString();
+        }
+
+        if ($staff && ($carId = CarSearch::vehicleId($term)) !== null) {
+            return $query->with($with)->where('id', $carId)->paginate($perPage)->withQueryString();
+        }
+
+        $ids     = CarSearch::rankedIds($query, $term);
+        $pageIds = array_slice($ids, ($page - 1) * $perPage, $perPage);
+
+        $cars = Car::with($with)
+            ->whereIn('id', $pageIds)
+            ->get()
+            ->sortBy(fn ($car) => array_search($car->id, $pageIds))
+            ->values();
+
+        return new LengthAwarePaginator($cars, count($ids), $perPage, $page, [
+            'path'  => $request->url(),
+            'query' => $request->query(),
+        ]);
     }
 
     private function rules(bool $creating): array
