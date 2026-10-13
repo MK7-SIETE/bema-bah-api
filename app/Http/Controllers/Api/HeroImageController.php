@@ -47,7 +47,7 @@ class HeroImageController extends Controller
         $cloudName = config('services.cloudinary.cloud_name');
         $apiKey    = config('services.cloudinary.api_key');
         $apiSecret = config('services.cloudinary.api_secret');
-        $folder    = config('services.cloudinary.hero_folder', 'mukuba-motors/heroes');
+        $folder    = config('services.cloudinary.hero_folder', 'bema-bah/heroes');
         $timestamp = time();
         $signature = sha1("folder={$folder}&timestamp={$timestamp}{$apiSecret}");
 

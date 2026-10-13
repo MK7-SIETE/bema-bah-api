@@ -125,3 +125,4 @@ class CarSearch
         return array_keys($scores);
     }
 }
+

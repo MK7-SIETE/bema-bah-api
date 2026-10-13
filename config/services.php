@@ -24,6 +24,7 @@ return [
         'api_key'    => env('CLOUDINARY_API_KEY'),
         'api_secret' => env('CLOUDINARY_API_SECRET'),
         'folder'     => env('CLOUDINARY_FOLDER', 'bema-bah/cars'),
+        'hero_folder' => env('CLOUDINARY_HERO_FOLDER', 'bema-bah/heroes'),
     ],
 
 ];
