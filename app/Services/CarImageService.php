@@ -125,6 +125,24 @@ class CarImageService
         }
     }
 
+    /**
+     * Remove photos from Cloudinary AFTER the response has been sent to the browser.
+     * Pass the stored photo addresses (read them BEFORE deleting the car rows).
+     */
+    public function deleteRemoteAfterResponse(iterable $urls): void
+    {
+        $urls = collect($urls)->filter()->values();
+        if ($urls->isEmpty()) {
+            return;
+        }
+
+        app()->terminating(function () use ($urls) {
+            foreach ($urls as $url) {
+                $this->deleteRemote((string) $url);
+            }
+        });
+    }
+
     public function deleteRemote(string $url): void
     {
         if (! str_contains($url, 'cloudinary.com')) {

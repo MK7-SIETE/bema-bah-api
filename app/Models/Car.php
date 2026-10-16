@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class Car extends Model
@@ -61,6 +62,19 @@ class Car extends Model
     public function getVehicleCodeAttribute(): ?string
     {
         return $this->id ? sprintf('BB-%04d', $this->id) : null;
+    }
+
+    /**
+     * The ONE rule for "may the public see this car?":
+     * the car is switched on AND its owner's account is active.
+     * Use Car::visible() in every public query, so suspending a dealer
+     * hides all of their cars everywhere at once (and un-suspending brings them back).
+     */
+    public function scopeVisible(Builder $query): Builder
+    {
+        return $query
+            ->where('is_available', true)
+            ->whereIn('user_id', fn ($q) => $q->select('id')->from('users')->where('is_active', true));
     }
 
     // Accepts "Right-hand drive (RHD)", "rhd", "LHD" ... and stores RHD or LHD.

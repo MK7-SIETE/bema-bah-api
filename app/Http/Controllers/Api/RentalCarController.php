@@ -2,54 +2,56 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\SearchesCars;
 use App\Http\Controllers\Controller;
 use App\Models\Car;
 use App\Services\CarImageService;
 use App\Support\CarInput;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class RentalCarController extends Controller
 {
-    // ── PUBLIC: browse rental cars ─────────────────────
+    use SearchesCars;
+
+    // ── PUBLIC: browse rental cars (typo-tolerant search + "load more" paging) ──
     public function publicIndex(Request $request)
     {
-        $query = Car::with('images')
-            ->where('listing_type', 'rental')
-            ->where('is_available', true);
+        $query = Car::where('listing_type', 'rental')->visible();
 
-        if ($request->search) {
-            $s = '%' . $request->search . '%';
-            $query->where(function ($q) use ($s) {
-                $q->where('make', 'like', $s)
-                  ->orWhere('model', 'like', $s)
-                  ->orWhere('body_type', 'like', $s)
-                  ->orWhere('location', 'like', $s);
-            });
-        }
         if ($request->location)  $query->where('location', 'like', '%' . $request->location . '%');
         if ($request->body_type) $query->where('body_type', $request->body_type);
         if ($request->max_price) $query->where('rental_price_per_day', '<=', (int) $request->max_price);
 
-        return response()->json($query->latest()->limit(100)->get());
+        $perPage = min(max((int) $request->input('per_page', 12), 1), 48);
+
+        return response()->json(
+            $this->searchAndPaginate($query, $request, $perPage, ['images'])
+        );
     }
 
     // ── PUBLIC: single rental car ──────────────────────
     public function publicShow(Car $car)
     {
-        abort_unless($car->listing_type === 'rental' && $car->is_available, 404);
+        $shown = Car::visible()
+            ->where('listing_type', 'rental')
+            ->whereKey($car->id)
+            ->exists();
+
+        abort_unless($shown, 404);
         return response()->json($car->load('images'));
     }
 
-    // ── RENTAL ADMIN: own rental cars ──────────────────
+    // ── RENTAL ADMIN: own rental cars (search by text or vehicle ID, filters, page numbers) ──
     public function index(Request $request)
     {
+        $query = Car::where('user_id', $request->user()->id)
+                    ->where('listing_type', 'rental');
+        $this->applyStaffFilters($query, $request);
+
         return response()->json(
-            Car::with('images')
-               ->where('user_id', $request->user()->id)
-               ->where('listing_type', 'rental')
-               ->latest()
-               ->get()
+            $this->searchAndPaginate($query, $request, 15, ['images'], true)
         );
     }
 
@@ -101,8 +103,11 @@ class RentalCarController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $images->deleteAllFor($car);
+        $urls = DB::table('car_images')->where('car_id', $car->id)->pluck('path');
+
         $car->delete(); // image rows are removed with the car
+        $images->deleteRemoteAfterResponse($urls);
+
         return response()->json(['message' => 'Rental car deleted.']);
     }
 

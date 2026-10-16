@@ -2,22 +2,23 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\SearchesCars;
 use App\Http\Controllers\Controller;
 use App\Models\Car;
 use App\Services\CarImageService;
 use App\Support\CarInput;
-use App\Support\CarSearch;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class CarController extends Controller
 {
+    use SearchesCars;
+
     // ── PUBLIC: browse cars for sale (typo-tolerant search + "load more" paging) ──
     public function index(Request $request)
     {
-        $query = Car::where('is_available', true)->where('listing_type', 'sale');
+        $query = Car::visible()->where('listing_type', 'sale');
 
         if ($request->make)           $query->where('make', $request->make);
         if ($request->body_type)      $query->where('body_type', $request->body_type);
@@ -44,6 +45,7 @@ class CarController extends Controller
     }
 
     // ── PUBLIC: single car ─────────────────────────────
+    // NOTE: this is also what the dealer's edit form loads, so it still returns hidden cars.
     public function show(Car $car)
     {
         return response()->json($car->load('images'));
@@ -53,7 +55,7 @@ class CarController extends Controller
     public function featured()
     {
         $cars = Car::with('images')
-                   ->where('is_available', true)
+                   ->visible()
                    ->where('listing_type', 'sale')
                    ->where('is_featured', true)
                    ->latest()
@@ -62,10 +64,11 @@ class CarController extends Controller
         return response()->json($cars);
     }
 
-    // ── DEALER: this dealer's cars (search by text or vehicle ID, page numbers) ──
+    // ── DEALER: this dealer's cars (search by text or vehicle ID, filters, page numbers) ──
     public function dealerIndex(Request $request)
     {
         $query = Car::where('user_id', $request->user()->id);
+        $this->applyStaffFilters($query, $request);
 
         // SETTING 4: cars per page in the staff lists
         return response()->json(
@@ -103,10 +106,11 @@ class CarController extends Controller
         return response()->json($car->load('images'), 201);
     }
 
-    // ── DEALER: update car ─────────────────────────────
+    // ── DEALER or SUPER: update car ────────────────────
+    // The super admin sends only the switches it controls (is_available, is_featured, is_classic).
     public function update(Request $request, Car $car)
     {
-        if ($car->user_id !== $request->user()->id) {
+        if (! $this->canManage($request, $car)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -116,23 +120,25 @@ class CarController extends Controller
         return response()->json($car->load('images'));
     }
 
-    // ── DEALER: delete car (and its photos on Cloudinary) ──
+    // ── DEALER or SUPER: delete car (its photos on Cloudinary are removed after the response) ──
     public function destroy(Request $request, Car $car, CarImageService $images)
     {
-        if ($car->user_id !== $request->user()->id) {
+        if (! $this->canManage($request, $car)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $images->deleteAllFor($car);
+        $urls = DB::table('car_images')->where('car_id', $car->id)->pluck('path');
+
         $car->delete(); // image rows are removed with the car
+        $images->deleteRemoteAfterResponse($urls);
 
         return response()->json(['message' => 'Car deleted.']);
     }
 
-    // ── DEALER: toggle availability ────────────────────
+    // ── DEALER or SUPER: toggle availability (hide / show on the public site) ──
     public function toggle(Request $request, Car $car)
     {
-        if ($car->user_id !== $request->user()->id) {
+        if (! $this->canManage($request, $car)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -140,55 +146,52 @@ class CarController extends Controller
         return response()->json($car);
     }
 
-    // ── SUPER: all cars across all dealers (search by text or vehicle ID, page numbers) ──
+    // ── SUPER: one action on many cars, in ONE database call ──
+    // POST { "ids": [1,2,3], "action": "hide" | "show" | "feature" | "unfeature" | "classic" | "unclassic" | "delete" }
+    public function bulk(Request $request, CarImageService $images)
+    {
+        $data = $request->validate([
+            'ids'    => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*'  => ['integer'],
+            'action' => ['required', Rule::in(['hide', 'show', 'feature', 'unfeature', 'classic', 'unclassic', 'delete'])],
+        ]);
+
+        $switches = [
+            'hide'      => ['is_available' => false],
+            'show'      => ['is_available' => true],
+            'feature'   => ['is_featured'  => true],
+            'unfeature' => ['is_featured'  => false],
+            'classic'   => ['is_classic'   => true],
+            'unclassic' => ['is_classic'   => false],
+        ];
+
+        if ($data['action'] === 'delete') {
+            $urls     = DB::table('car_images')->whereIn('car_id', $data['ids'])->pluck('path');
+            $affected = Car::whereIn('id', $data['ids'])->delete();
+            $images->deleteRemoteAfterResponse($urls);
+        } else {
+            $affected = Car::whereIn('id', $data['ids'])->update($switches[$data['action']]);
+        }
+
+        return response()->json(['affected' => $affected]);
+    }
+
+    // ── SUPER: all cars across all dealers (search by text or vehicle ID, filters, page numbers) ──
     public function superIndex(Request $request)
     {
+        $query = Car::query();
+        $this->applyStaffFilters($query, $request, true);
+
         return response()->json(
-            $this->searchAndPaginate(Car::query(), $request, 15, ['images', 'user:id,name,email'], true)
+            $this->searchAndPaginate($query, $request, 15, ['images', 'user:id,name,email,is_active'], true)
         );
     }
 
-    /**
-     * Shared search + paging.
-     *
-     *  - no search text      -> newest first, paged by MySQL
-     *  - $staff and the text looks like a vehicle ID (BB-0012) -> that exact car
-     *  - otherwise           -> typo-tolerant search, best match first, paged
-     *
-     * Always returns the same shape: { data: [...], current_page, last_page, per_page, total, ... }
-     * Customers use "load more": ask for ?page=2 while current_page < last_page.
-     */
-    private function searchAndPaginate(
-        Builder $query,
-        Request $request,
-        int $perPage,
-        array $with = [],
-        bool $staff = false
-    ): LengthAwarePaginator {
-        $term = trim((string) $request->input('search', ''));
-        $page = max(1, (int) $request->input('page', 1));
-
-        if ($term === '') {
-            return $query->with($with)->latest()->paginate($perPage)->withQueryString();
-        }
-
-        if ($staff && ($carId = CarSearch::vehicleId($term)) !== null) {
-            return $query->with($with)->where('id', $carId)->paginate($perPage)->withQueryString();
-        }
-
-        $ids     = CarSearch::rankedIds($query, $term);
-        $pageIds = array_slice($ids, ($page - 1) * $perPage, $perPage);
-
-        $cars = Car::with($with)
-            ->whereIn('id', $pageIds)
-            ->get()
-            ->sortBy(fn ($car) => array_search($car->id, $pageIds))
-            ->values();
-
-        return new LengthAwarePaginator($cars, count($ids), $perPage, $page, [
-            'path'  => $request->url(),
-            'query' => $request->query(),
-        ]);
+    // The ONE ownership rule for car actions: the owner, or the super admin.
+    private function canManage(Request $request, Car $car): bool
+    {
+        $user = $request->user();
+        return $user->isSuper() || $car->user_id === $user->id;
     }
 
     private function rules(bool $creating): array

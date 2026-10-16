@@ -57,9 +57,11 @@ Route::middleware(['auth:sanctum', 'dealer.auth'])->prefix('dealer')->group(func
     Route::delete('cars/{car}/images/{img}', [ImageController::class, 'destroy']);
     Route::post('cars/{car}/images/reorder', [ImageController::class, 'reorder']);
 
-  
-    // Messages
+
+    // Messages (the fixed words "unread-count" and "bulk" come BEFORE {message})
     Route::get('messages',                  [MessageController::class, 'index']);
+    Route::get('messages/unread-count',     [MessageController::class, 'unreadCount']);
+    Route::post('messages/bulk',            [MessageController::class, 'bulk']);
     Route::get('messages/{message}',        [MessageController::class, 'show']);
     Route::patch('messages/{message}/read', [MessageController::class, 'markRead']);
     Route::delete('messages/{message}',     [MessageController::class, 'destroy']);
@@ -137,10 +139,20 @@ Route::middleware(['auth:sanctum', 'super.auth'])->prefix('super')->group(functi
     Route::patch('rental-requests/{rentalRequest}/forward', [RentalRequestController::class, 'forward']);
     Route::patch('rental-requests/{rentalRequest}/status',  [RentalRequestController::class, 'superStatus']);
 
-    // Full data access
-    Route::get('cars',                      [CarController::class,     'superIndex']);
-    Route::get('messages',                  [MessageController::class,  'superIndex']);
-    Route::patch('messages/{message}/read', [MessageController::class,  'superMarkRead']);
+    // Full data access — the super admin uses the SAME car and message actions the dealers use.
+    // The "owner or super admin" rule lives inside the controllers, so nothing is written twice.
+    Route::get('cars',                    [CarController::class, 'superIndex']);
+    Route::post('cars/bulk',              [CarController::class, 'bulk']);
+    Route::put('cars/{car}',              [CarController::class, 'update']);
+    Route::patch('cars/{car}/toggle',     [CarController::class, 'toggle']);
+    Route::delete('cars/{car}',           [CarController::class, 'destroy']);
+
+    Route::get('messages',                  [MessageController::class, 'index']);
+    Route::get('messages/unread-count',     [MessageController::class, 'unreadCount']);
+    Route::post('messages/bulk',            [MessageController::class, 'bulk']);
+    Route::get('messages/{message}',        [MessageController::class, 'show']);
+    Route::patch('messages/{message}/read', [MessageController::class, 'markRead']);
+    Route::delete('messages/{message}',     [MessageController::class, 'destroy']);
 
     // Testimonials
     Route::get('testimonials',                        [TestimonialController::class, 'superIndex']);
@@ -165,5 +177,5 @@ Route::middleware(['auth:sanctum', 'super.auth'])->prefix('super')->group(functi
     // System
     Route::get('health',       [SystemHealthController::class, 'index']);
     Route::get('security-log', [SecurityLogController::class,  'index']);
-  
+
 });

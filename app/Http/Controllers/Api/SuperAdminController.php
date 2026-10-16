@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Car;
 use App\Models\SiteConfig;
 use App\Models\User;
+use App\Services\CarImageService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class SuperAdminController extends Controller
@@ -13,7 +16,7 @@ class SuperAdminController extends Controller
     public function dealers()
     {
         return response()->json(
-            User::where('role', 'dealer')->orderBy('created_at', 'desc')->get()
+            User::where('role', 'dealer')->withCount('cars')->orderBy('created_at', 'desc')->get()
         );
     }
 
@@ -36,6 +39,7 @@ class SuperAdminController extends Controller
         return response()->json($user, 201);
     }
 
+    // Suspending a dealer hides all of their cars from the public site (see Car::visible()).
     public function suspend(int $id)
     {
         $user = User::where('role', 'dealer')->findOrFail($id);
@@ -46,10 +50,10 @@ class SuperAdminController extends Controller
         ]);
     }
 
-    public function deleteDealer(int $id)
+    public function deleteDealer(int $id, CarImageService $images)
     {
         $user = User::where('role', 'dealer')->findOrFail($id);
-        $user->delete();
+        $this->deleteAccount($user, $images);
         return response()->json(['message' => 'Dealer account deleted.']);
     }
 
@@ -57,7 +61,7 @@ class SuperAdminController extends Controller
     public function rentalAdmins()
     {
         return response()->json(
-            User::where('role', 'rental_admin')->orderBy('created_at', 'desc')->get()
+            User::where('role', 'rental_admin')->withCount('cars')->orderBy('created_at', 'desc')->get()
         );
     }
 
@@ -105,10 +109,10 @@ class SuperAdminController extends Controller
         ]);
     }
 
-    public function deleteRentalAdmin(int $id)
+    public function deleteRentalAdmin(int $id, CarImageService $images)
     {
         $user = User::where('role', 'rental_admin')->findOrFail($id);
-        $user->delete(); // their rental cars are deleted with them
+        $this->deleteAccount($user, $images); // their rental cars are deleted with them
         return response()->json(['message' => 'Rental admin account deleted.']);
     }
 
@@ -122,8 +126,11 @@ class SuperAdminController extends Controller
         $data = $request->validate([
             'dealership_name' => ['sometimes', 'string', 'max:200'],
             'phone'           => ['sometimes', 'string', 'max:30'],
+            'whatsapp'        => ['sometimes', 'nullable', 'string', 'max:30'],
             'email'           => ['sometimes', 'email'],
             'address'         => ['sometimes', 'string'],
+            'city'            => ['sometimes', 'nullable', 'string', 'max:100'],
+            'country'         => ['sometimes', 'nullable', 'string', 'max:100'],
             'about'           => ['sometimes', 'string'],
             'facebook'        => ['nullable', 'url'],
             'instagram'       => ['nullable', 'url'],
@@ -135,5 +142,19 @@ class SuperAdminController extends Controller
         }
 
         return response()->json(['message' => 'Site config updated.', 'config' => SiteConfig::all_config()]);
+    }
+
+    // Delete a dealer or rental admin together with their cars.
+    // The photo addresses are read BEFORE the delete (the database removes the car rows with the account),
+    // and the photos are removed from Cloudinary after the response, so the request stays fast.
+    private function deleteAccount(User $user, CarImageService $images): void
+    {
+        $urls = DB::table('car_images')
+            ->whereIn('car_id', Car::select('id')->where('user_id', $user->id))
+            ->pluck('path');
+
+        $user->delete();
+
+        $images->deleteRemoteAfterResponse($urls);
     }
 }

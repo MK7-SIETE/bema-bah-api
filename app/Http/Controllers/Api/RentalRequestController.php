@@ -25,9 +25,10 @@ class RentalRequestController extends Controller
             'notes'           => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $car = Car::where('id', $data['car_id'])
+        // Same public-visibility rule as the website: switched on AND owner account active.
+        $car = Car::visible()
+            ->where('id', $data['car_id'])
             ->where('listing_type', 'rental')
-            ->where('is_available', true)
             ->first();
 
         if (! $car) {
@@ -46,7 +47,7 @@ class RentalRequestController extends Controller
         ], 201);
     }
 
-    // ── SUPER ADMIN: list all requests ─────────────────
+    // ── SUPER ADMIN: list requests (paged, newest first, optional ?status=) ──
     public function superIndex(Request $request)
     {
         $query = RentalRequest::with([
@@ -58,7 +59,7 @@ class RentalRequestController extends Controller
             $query->where('status', $request->status);
         }
 
-        return response()->json($query->limit(200)->get());
+        return response()->json($query->paginate(20)->withQueryString());
     }
 
     // ── SUPER ADMIN: forward a request to the rental admin ──
@@ -102,7 +103,7 @@ class RentalRequestController extends Controller
         return response()->json($rentalRequest);
     }
 
-    // ── RENTAL ADMIN: requests forwarded to me ─────────
+    // ── RENTAL ADMIN: requests forwarded to me (paged) ──
     public function rentalIndex(Request $request)
     {
         return response()->json(
@@ -110,7 +111,8 @@ class RentalRequestController extends Controller
                 ->where('rental_admin_id', $request->user()->id)
                 ->whereIn('status', ['forwarded', 'confirmed', 'declined', 'completed'])
                 ->latest()
-                ->get()
+                ->paginate(20)
+                ->withQueryString()
         );
     }
 
