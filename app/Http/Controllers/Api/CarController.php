@@ -116,6 +116,12 @@ class CarController extends Controller
 
         $data = CarInput::clean($request->validate($this->rules(false)));
 
+        // "Sold" belongs to the dealer. The super admin hides or shows a car with hidden_by_admin
+        // (toggle / bulk), never through is_available.
+        if ($request->user()->isSuper()) {
+            unset($data['is_available']);
+        }
+
         $car->update($data);
         return response()->json($car->load('images'));
     }
@@ -142,7 +148,14 @@ class CarController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $car->update(['is_available' => ! $car->is_available]);
+        // Two separate switches, so neither side can undo the other:
+        //   dealer / rental admin -> is_available    (sold / available)
+        //   super admin           -> hidden_by_admin (hidden from the public site)
+        if ($request->user()->isSuper()) {
+            $car->forceFill(['hidden_by_admin' => ! $car->hidden_by_admin])->save();
+        } else {
+            $car->update(['is_available' => ! $car->is_available]);
+        }
         return response()->json($car);
     }
 
@@ -157,8 +170,8 @@ class CarController extends Controller
         ]);
 
         $switches = [
-            'hide'      => ['is_available' => false],
-            'show'      => ['is_available' => true],
+            'hide'      => ['hidden_by_admin' => true],
+            'show'      => ['hidden_by_admin' => false],
             'feature'   => ['is_featured'  => true],
             'unfeature' => ['is_featured'  => false],
             'classic'   => ['is_classic'   => true],

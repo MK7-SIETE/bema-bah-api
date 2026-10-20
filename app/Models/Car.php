@@ -52,6 +52,7 @@ class Car extends Model
         'features'     => 'array',
         'is_featured'  => 'boolean',
         'is_available' => 'boolean',
+        'hidden_by_admin' => 'boolean',  // the super admin's switch; never set by a dealer
         'is_classic'   => 'boolean',
     ];
 
@@ -74,6 +75,7 @@ class Car extends Model
     {
         return $query
             ->where('is_available', true)
+            ->where('hidden_by_admin', false)
             ->whereIn('user_id', fn ($q) => $q->select('id')->from('users')->where('is_active', true));
     }
 
