@@ -8,10 +8,20 @@ use App\Models\Message;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class MessageController extends Controller
 {
+    // One message row is shared, but each side keeps its OWN state on it:
+    //   dealer_is_read / super_is_read          - has this side opened it?
+    //   dealer_deleted_at / super_deleted_at    - has this side deleted it? (the other side still sees it)
+    // The row is removed for good only when both sides have deleted it,
+    // or when it has no dealer at all (general / import messages: only the super admin ever sees them).
+    // The JSON we send back still says "is_read" - it is simply THIS person's own flag,
+    // so the frontend does not need to change.
+    private const PARTY_COLUMNS = ['dealer_is_read', 'super_is_read', 'dealer_deleted_at', 'super_deleted_at'];
+
     // ── PUBLIC: submit message ─────────────────────────────────────
     public function store(Request $request)
     {
@@ -38,6 +48,7 @@ class MessageController extends Controller
         }
         // General / import messages: user_id stays null → super admin inbox only
 
+        // dealer_is_read and super_is_read start as false (the column default), nothing is deleted yet.
         $message = Message::create($data);
 
         return response()->json([
@@ -54,6 +65,7 @@ class MessageController extends Controller
     public function index(Request $request)
     {
         $user  = $request->user();
+        $party = $this->party($user);
         $query = $this->scopeFor($user);
 
         $type = $request->input('type');
@@ -63,9 +75,9 @@ class MessageController extends Controller
 
         $read = $request->input('read');
         if ($read === 'unread') {
-            $query->where('is_read', false);
+            $query->where($party . '_is_read', false);
         } elseif ($read === 'read') {
-            $query->where('is_read', true);
+            $query->where($party . '_is_read', true);
         }
 
         if ($request->filled('search')) {
@@ -90,17 +102,25 @@ class MessageController extends Controller
               ->orderByDesc('id');
 
         if (! $request->has('page')) {
-            return response()->json($query->limit(100)->get());
+            return response()->json(
+                $query->limit(100)->get()->map(fn (Message $m) => $this->forParty($m, $party))
+            );
         }
 
-        return response()->json($query->paginate(20)->withQueryString());
+        return response()->json(
+            $query->paginate(20)
+                  ->through(fn (Message $m) => $this->forParty($m, $party))
+                  ->withQueryString()
+        );
     }
 
     // ── DEALER or SUPER: how many unread (one cheap query, for the badge) ──
     public function unreadCount(Request $request)
     {
+        $user = $request->user();
+
         return response()->json([
-            'unread' => $this->scopeFor($request->user())->where('is_read', false)->count(),
+            'unread' => $this->scopeFor($user)->where($this->party($user) . '_is_read', false)->count(),
         ]);
     }
 
@@ -111,28 +131,34 @@ class MessageController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        return response()->json($message->load('car:id,user_id,make,model,year'));
+        $message->load('car:id,user_id,make,model,year');
+
+        return response()->json($this->forParty($message, $this->party($request->user())));
     }
 
-    // ── DEALER or SUPER: mark read ─────────────────────────────────
+    // ── DEALER or SUPER: mark read (only for the person asking) ────
     public function markRead(Request $request, Message $message)
     {
         if (! $this->canAccess($request, $message)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $message->update(['is_read' => true]);
-        return response()->json($message);
+        $party = $this->party($request->user());
+        $message->forceFill([$party . '_is_read' => true])->save();
+
+        return response()->json($this->forParty($message, $party));
     }
 
-    // ── DEALER or SUPER: delete ────────────────────────────────────
+    // ── DEALER or SUPER: delete (only for the person asking) ───────
     public function destroy(Request $request, Message $message)
     {
         if (! $this->canAccess($request, $message)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $message->delete();
+        $user = $request->user();
+        $this->removeFor($this->scopeFor($user)->whereKey($message->id), $this->party($user));
+
         return response()->json(['message' => 'Message deleted.']);
     }
 
@@ -147,22 +173,31 @@ class MessageController extends Controller
             'action' => ['required', Rule::in(['read', 'unread', 'delete'])],
         ]);
 
-        $query = $this->scopeFor($request->user())->whereIn('id', $data['ids']);
+        $user  = $request->user();
+        $party = $this->party($user);
+        $query = $this->scopeFor($user)->whereIn('id', $data['ids']);
 
         $affected = match ($data['action']) {
-            'read'   => $query->update(['is_read' => true]),
-            'unread' => $query->update(['is_read' => false]),
-            'delete' => $query->delete(),
+            'read'   => $query->update([$party . '_is_read' => true]),
+            'unread' => $query->update([$party . '_is_read' => false]),
+            'delete' => $this->removeFor($query, $party),
         };
 
         return response()->json(['affected' => $affected]);
     }
 
+    // Which side is asking: the super admin, or a dealer.
+    private function party(User $user): string
+    {
+        return $user->isSuper() ? 'super' : 'dealer';
+    }
+
     // The messages this person may see: super admin = all;
     // dealer = enquiries about their cars, plus messages assigned directly to them.
+    // Anything THIS person has already deleted is left out.
     private function scopeFor(User $user): Builder
     {
-        $query = Message::query();
+        $query = Message::query()->whereNull($this->party($user) . '_deleted_at');
 
         if ($user->isSuper()) {
             return $query;
@@ -179,11 +214,52 @@ class MessageController extends Controller
     {
         $user = $request->user();
 
+        // Already deleted by this person: it is gone for them.
+        if ($message->{$this->party($user) . '_deleted_at'} !== null) {
+            return false;
+        }
+
         if ($user->isSuper() || $message->user_id === $user->id) {
             return true;
         }
 
         return $message->car_id
             && Car::whereKey($message->car_id)->where('user_id', $user->id)->exists();
+    }
+
+    // Delete for ONE side. The row disappears for good only when nobody can see it any more:
+    // both sides deleted it, or it has no dealer (no user and no car), so only the super admin had it.
+    // $visible is already limited to messages this person may see.
+    private function removeFor(Builder $visible, string $party): int
+    {
+        $ids = $visible->pluck('id')->all();
+
+        if (empty($ids)) {
+            return 0;
+        }
+
+        DB::transaction(function () use ($ids, $party) {
+            Message::whereIn('id', $ids)->update([$party . '_deleted_at' => now()]);
+
+            Message::whereIn('id', $ids)
+                ->where(function ($q) {
+                    $q->where(function ($both) {
+                        $both->whereNotNull('dealer_deleted_at')->whereNotNull('super_deleted_at');
+                    })->orWhere(function ($noDealer) {
+                        $noDealer->whereNull('user_id')->whereNull('car_id');
+                    });
+                })
+                ->delete();
+        });
+
+        return count($ids);
+    }
+
+    // Make the JSON show THIS person's own read flag as "is_read", and hide the four per-side columns.
+    private function forParty(Message $message, string $party): Message
+    {
+        $message->setAttribute('is_read', (bool) $message->{$party . '_is_read'});
+
+        return $message->makeHidden(self::PARTY_COLUMNS);
     }
 }
