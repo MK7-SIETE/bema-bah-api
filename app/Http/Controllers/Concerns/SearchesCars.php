@@ -64,10 +64,25 @@ trait SearchesCars
     protected function applyStaffFilters(Builder $query, Request $request, bool $allowDealer = false): void
     {
         $status = $request->input('status');
-        if ($status === 'live') {
-            $query->where('is_available', true);
-        } elseif ($status === 'hidden') {
-            $query->where('is_available', false);
+        $isSuper = (bool) $request->user()?->isSuper();
+
+        if ($isSuper) {
+            // Super admin list:  live = on the site (not sold, not hidden)
+            //                    hidden = hidden by the admin    sold = marked sold by the dealer
+            if ($status === 'live') {
+                $query->where('is_available', true)->where('hidden_by_admin', false);
+            } elseif ($status === 'hidden') {
+                $query->where('hidden_by_admin', true);
+            } elseif ($status === 'sold') {
+                $query->where('is_available', false);
+            }
+        } else {
+            // Dealer / rental admin list:  live = available,  hidden = sold
+            if ($status === 'live') {
+                $query->where('is_available', true);
+            } elseif ($status === 'hidden') {
+                $query->where('is_available', false);
+            }
         }
 
         $type = $request->input('type');
