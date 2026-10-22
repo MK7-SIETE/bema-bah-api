@@ -25,6 +25,7 @@ Route::get('cars',               [CarController::class, 'index']);
 Route::get('cars/featured/list', [CarController::class, 'featured']);
 Route::get('classics',           [CarController::class, 'classics']);
 Route::get('cars/{car}',         [CarController::class, 'show']);
+Route::post('cars/{car}/view',   [\App\Http\Controllers\Api\CarViewController::class, 'store'])->middleware('throttle:60,1');
 Route::post('messages',          [MessageController::class, 'store']);
 Route::get('rentals',            [RentalCarController::class, 'publicIndex']);
 Route::get('rentals/{car}',      [RentalCarController::class, 'publicShow']);
