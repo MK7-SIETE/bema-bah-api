@@ -110,6 +110,7 @@ Route::post('super/logout', [AuthController::class, 'superLogout'])->middleware(
 Route::middleware(['auth:sanctum', 'super.auth'])->prefix('super')->group(function () {
     Route::get('me',    [AuthController::class, 'superMe']);
     Route::get('stats', [StatsController::class, 'super']);
+    Route::get('analytics', [\App\Http\Controllers\Api\SuperAnalyticsController::class, 'index']);
 
     // Hero images
     Route::get('hero-images',                [HeroImageController::class, 'superIndex']);
