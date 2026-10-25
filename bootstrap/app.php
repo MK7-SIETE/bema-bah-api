@@ -12,6 +12,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health:   '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // This is an API: there is no login PAGE to send a visitor to.
+        // By default Laravel looks for a route named "login" for any request that does not ask for JSON,
+        // does not find one, and answers 500 instead of 401. With no redirect, it answers 401 JSON.
+        $middleware->redirectGuestsTo(fn () => null);
+
         $middleware->use([
             \Illuminate\Http\Middleware\TrustProxies::class,
             \Illuminate\Http\Middleware\HandleCors::class,
