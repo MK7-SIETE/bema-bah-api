@@ -79,6 +79,13 @@ class AuthController extends Controller
     }
 
     // ── Super admin login ──────────────────────────────
+    // The super admin account lives in the database, and its SAVED (hashed) password is the only
+    // one that counts once the account exists. So changing the password on the Profile page
+    // really replaces the old one. The SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD server settings
+    // are used ONLY on the very first run, to create the account when none exists yet.
+    // If the saved password is ever lost, reset it with "php artisan tinker" (do NOT delete the
+    // row: deleting a user can delete everything linked to it):
+    //   App\Models\User::where('role','super')->first()->update(['password' => 'a-new-strong-password']);
     public function superLogin(Request $request)
     {
         $request->validate([
@@ -86,56 +93,53 @@ class AuthController extends Controller
             'password' => ['required'],
         ]);
 
-        $envEmail = config('app.super_admin_email', env('SUPER_ADMIN_EMAIL'));
-        $envPass  = config('app.super_admin_password', env('SUPER_ADMIN_PASSWORD'));
+        $email    = (string) $request->email;
+        $password = (string) $request->password;
 
-        if ($request->email === $envEmail && $request->password === $envPass) {
-            $user = User::firstOrCreate(
-                ['email' => $envEmail],
-                [
+        $user = User::where('email', $email)->where('role', 'super')->first();
+
+        if ($user) {
+            if (! Hash::check($password, $user->password)) {
+                $user = null;
+            }
+        } elseif (! User::where('role', 'super')->exists() && ! User::where('email', $email)->exists()) {
+            // First run only: there is NO super admin account at all yet. Once one exists,
+            // the server settings can never create a second one (there is only ever one super admin).
+            $envEmail = (string) config('app.super_admin_email', env('SUPER_ADMIN_EMAIL'));
+            $envPass  = (string) config('app.super_admin_password', env('SUPER_ADMIN_PASSWORD'));
+
+            if ($envEmail !== '' && $envPass !== ''
+                && hash_equals(strtolower($envEmail), strtolower($email))
+                && hash_equals($envPass, $password)) {
+                $user = User::create([
                     'name'      => 'Super Admin',
+                    'email'     => $envEmail,
                     'password'  => Hash::make($envPass),
                     'role'      => 'super',
                     'is_active' => true,
-                ]
-            );
+                ]);
+            }
+        }
 
-            $user->tokens()->delete();
-$token =    $user->createToken('super-token', ['super'])->plainTextToken;
-            $this->logSecurityEvent('login_success', $user->id, $request);
-
-            return response()->json([
-                'token' => $token,
-                'user'  => [
-                    'id'    => $user->id,
-                    'name'  => $user->name,
-                    'email' => $user->email,
-                    'role'  => $user->role,
-                ],
+        if (! $user) {
+            $this->logSecurityEvent('login_fail', null, $request, ['email' => $request->email, 'role' => 'super']);
+            throw ValidationException::withMessages([
+                'email' => ['Access denied.'],
             ]);
         }
 
-    
-        $user = User::where('email', $request->email)->where('role', 'super')->first();
-        if ($user && Hash::check($request->password, $user->password)) {
-           $user->tokens()->delete();
-            $token = $user->createToken('super-token', ['super'])->plainTextToken;
-            $this->logSecurityEvent('login_success', $user->id, $request);
+        $user->tokens()->delete();
+        $token = $user->createToken('super-token', ['super'])->plainTextToken;
+        $this->logSecurityEvent('login_success', $user->id, $request);
 
-            return response()->json([
-                'token' => $token,
-                'user'  => [
-                    'id'    => $user->id,
-                    'name'  => $user->name,
-                    'email' => $user->email,
-                    'role'  => $user->role,
-                ],
-            ]);
-        }
-
-        $this->logSecurityEvent('login_fail', null, $request, ['email' => $request->email, 'role' => 'super']);
-        throw ValidationException::withMessages([
-            'email' => ['Access denied.'],
+        return response()->json([
+            'token' => $token,
+            'user'  => [
+                'id'    => $user->id,
+                'name'  => $user->name,
+                'email' => $user->email,
+                'role'  => $user->role,
+            ],
         ]);
     }
 

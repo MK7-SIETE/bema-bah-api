@@ -34,5 +34,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->statefulApi();
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // Every /api/* request gets JSON errors (401, 403, 404, 422, 500), whatever headers the caller sent.
+        // Without this, a request that forgets "Accept: application/json" tries to redirect to a
+        // "login" route that does not exist and ends in a 500 instead of a clean 401.
+        $exceptions->shouldRenderJsonWhen(function ($request, \Throwable $e) {
+            return $request->is('api/*') || $request->expectsJson();
+        });
     })->create();
