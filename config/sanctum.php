@@ -10,7 +10,8 @@ return [
 
     'guard' => ['web'],
 
-    'expiration' => null,
+    // Login tokens stop working 8 hours (480 minutes) after they were issued.
+    'expiration' => 480,
 
     'token_prefix' => env('SANCTUM_TOKEN_PREFIX', ''),
 

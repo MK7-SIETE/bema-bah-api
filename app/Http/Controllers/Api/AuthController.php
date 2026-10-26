@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\SecurityLog;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\ClientIp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -17,9 +18,14 @@ class AuthController extends Controller
             SecurityLog::create([
                 'user_id'    => $userId,
                 'event_type' => $type,
-                'ip_address' => $request->ip(),
+                'ip_address' => ClientIp::get($request),
                 'user_agent' => substr($request->userAgent() ?? '', 0, 500),
-                'meta'       => $meta ?: null,
+                // ip_source / remote / xff are TEMPORARY: they let us confirm which address is trustworthy on Render.
+                'meta'       => array_merge($meta, [
+                    'ip_source' => ClientIp::source($request),
+                    'remote'    => (string) $request->ip(),
+                    'xff'       => substr((string) $request->headers->get('X-Forwarded-For', ''), 0, 120),
+                ]),
                 'created_at' => now(),
             ]);
         } catch (\Throwable) {
