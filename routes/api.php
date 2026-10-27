@@ -87,6 +87,7 @@ Route::middleware(['auth:sanctum', 'rental.auth'])->prefix('rental')->group(func
 
     // Rental cars
     Route::get('cars',                [RentalCarController::class, 'index']);
+    Route::get('cars/{car}',         [RentalCarController::class, 'show']);
     Route::post('cars',               [RentalCarController::class, 'store']);
     Route::put('cars/{car}',          [RentalCarController::class, 'update']);
     Route::delete('cars/{car}',       [RentalCarController::class, 'destroy']);

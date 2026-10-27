@@ -55,6 +55,19 @@ class RentalCarController extends Controller
         );
     }
 
+    // ── RENTAL ADMIN: ONE of my own rental cars (for the edit form) ──
+    // Unlike publicShow(), this does NOT hide switched-off cars, so a car
+    // you made unavailable can still be opened and edited. A car that is not
+    // yours (or is not a rental) answers 404, so nobody can learn that it exists.
+    public function show(Request $request, Car $car)
+    {
+        if (! $this->owns($request, $car)) {
+            return response()->json(['message' => 'Not found.'], 404);
+        }
+
+        return response()->json($car->load('images'));
+    }
+
     public function store(Request $request, CarImageService $images)
     {
         $data = $request->validate($this->rules(true) + CarImageService::rules(false));
