@@ -25,20 +25,20 @@ Route::get('cars',               [CarController::class, 'index']);
 Route::get('cars/featured/list', [CarController::class, 'featured']);
 Route::get('classics',           [CarController::class, 'classics']);
 Route::get('cars/{car}',         [CarController::class, 'show']);
-Route::post('cars/{car}/view',   [\App\Http\Controllers\Api\CarViewController::class, 'store'])->middleware('throttle:60,1');
-Route::post('messages',          [MessageController::class, 'store']);
+Route::post('cars/{car}/view',   [\App\Http\Controllers\Api\CarViewController::class, 'store'])->middleware('throttle:car-views');
+Route::post('messages',          [MessageController::class, 'store'])->middleware('throttle:public-messages');
 Route::get('rentals',            [RentalCarController::class, 'publicIndex']);
 Route::get('rentals/{car}',      [RentalCarController::class, 'publicShow']);
-Route::post('rental-requests',   [RentalRequestController::class, 'store'])->middleware('throttle:6,1');
+Route::post('rental-requests',   [RentalRequestController::class, 'store'])->middleware('throttle:rental-requests');
 Route::get('hero-images',        [HeroImageController::class, 'index']);
 Route::get('testimonials',       [TestimonialController::class, 'index']);
-Route::post('testimonials',      [TestimonialController::class, 'store']);
-Route::post('subscribe',         [SubscriberController::class, 'subscribe']);
+Route::post('testimonials',      [TestimonialController::class, 'store'])->middleware('throttle:public-reviews');
+Route::post('subscribe',         [SubscriberController::class, 'subscribe'])->middleware('throttle:public-subscribe');
 Route::get('unsubscribe/{token}',[SubscriberController::class, 'unsubscribe']);
 Route::get('/health', fn () => response()->json(['status' => 'ok']));
 
 // ── Dealer auth ────────────────────────────────────────────────
-Route::post('dealer/login',  [AuthController::class, 'dealerLogin']);
+Route::post('dealer/login',  [AuthController::class, 'dealerLogin'])->middleware('throttle:login-attempts');
 Route::post('dealer/logout', [AuthController::class, 'dealerLogout'])->middleware(['auth:sanctum', 'dealer.auth']);
 
 // ── Dealer protected routes ────────────────────────────────────
@@ -78,7 +78,7 @@ Route::middleware(['auth:sanctum', 'dealer.auth'])->prefix('dealer')->group(func
 });
 
 // ── Rental admin auth ──────────────────────────────────────────
-Route::post('rental/login',  [AuthController::class, 'rentalLogin'])->middleware('throttle:10,1');
+Route::post('rental/login',  [AuthController::class, 'rentalLogin'])->middleware('throttle:login-attempts');
 Route::post('rental/logout', [AuthController::class, 'rentalLogout'])->middleware(['auth:sanctum', 'rental.auth']);
 
 // ── Rental admin protected routes ──────────────────────────────
@@ -103,7 +103,7 @@ Route::middleware(['auth:sanctum', 'rental.auth'])->prefix('rental')->group(func
 });
 
 // ── Super admin auth ───────────────────────────────────────────
-Route::post('super/login',  [AuthController::class, 'superLogin']);
+Route::post('super/login',  [AuthController::class, 'superLogin'])->middleware('throttle:login-attempts');
 Route::post('super/logout', [AuthController::class, 'superLogout'])->middleware(['auth:sanctum', 'super.auth']);
 
 // ── Super admin protected routes ───────────────────────────────

@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\ClientIp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -20,16 +21,31 @@ class AuthController extends Controller
                 'event_type' => $type,
                 'ip_address' => ClientIp::get($request),
                 'user_agent' => substr($request->userAgent() ?? '', 0, 500),
-                // ip_source / remote / xff are TEMPORARY: they let us confirm which address is trustworthy on Render.
-                'meta'       => array_merge($meta, [
-                    'ip_source' => ClientIp::source($request),
-                    'remote'    => (string) $request->ip(),
-                    'xff'       => substr((string) $request->headers->get('X-Forwarded-For', ''), 0, 120),
-                ]),
+                'meta'       => $meta ?: null,
                 'created_at' => now(),
             ]);
         } catch (\Throwable) {
             // Never let logging break auth
+        }
+    }
+
+    // ── Failed-login lockout: 5 wrong attempts per ACCOUNT and ADDRESS, then 15 minutes of waiting ──
+    // Counted per email AND visitor address, so a stranger who types your email cannot lock YOU out.
+    private const MAX_FAILED_LOGINS = 5;
+    private const LOCKOUT_SECONDS   = 900;
+
+    private function loginKey(string $role, Request $request): string
+    {
+        return 'login:' . $role . ':' . sha1(strtolower((string) $request->email) . '|' . ClientIp::get($request));
+    }
+
+    private function refuseIfLockedOut(string $key): void
+    {
+        if (RateLimiter::tooManyAttempts($key, self::MAX_FAILED_LOGINS)) {
+            $minutes = max(1, (int) ceil(RateLimiter::availableIn($key) / 60));
+            throw ValidationException::withMessages([
+                'email' => ['Too many failed attempts. Please try again in ' . $minutes . ' minute' . ($minutes === 1 ? '' : 's') . '.'],
+            ])->status(429);
         }
     }
 
@@ -41,11 +57,15 @@ class AuthController extends Controller
             'password' => ['required'],
         ]);
 
+        $lockKey = $this->loginKey('dealer', $request);
+        $this->refuseIfLockedOut($lockKey);
+
         $user = User::where('email', $request->email)
                     ->where('role', 'dealer')
                     ->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
+            RateLimiter::hit($lockKey, self::LOCKOUT_SECONDS);
             $this->logSecurityEvent('login_fail', null, $request, ['email' => $request->email, 'role' => 'dealer']);
             throw ValidationException::withMessages([
                 'email' => ['Invalid email or password.'],
@@ -57,6 +77,7 @@ class AuthController extends Controller
             return response()->json(['message' => 'Account suspended. Contact your administrator.'], 403);
         }
 
+        RateLimiter::clear($lockKey);
         $user->tokens()->delete();
         $token = $user->createToken('dealer-token', ['dealer'])->plainTextToken;
         $this->logSecurityEvent('login_success', $user->id, $request);
@@ -102,6 +123,9 @@ class AuthController extends Controller
         $email    = (string) $request->email;
         $password = (string) $request->password;
 
+        $lockKey = $this->loginKey('super', $request);
+        $this->refuseIfLockedOut($lockKey);
+
         $user = User::where('email', $email)->where('role', 'super')->first();
 
         if ($user) {
@@ -128,12 +152,14 @@ class AuthController extends Controller
         }
 
         if (! $user) {
+            RateLimiter::hit($lockKey, self::LOCKOUT_SECONDS);
             $this->logSecurityEvent('login_fail', null, $request, ['email' => $request->email, 'role' => 'super']);
             throw ValidationException::withMessages([
                 'email' => ['Access denied.'],
             ]);
         }
 
+        RateLimiter::clear($lockKey);
         $user->tokens()->delete();
         $token = $user->createToken('super-token', ['super'])->plainTextToken;
         $this->logSecurityEvent('login_success', $user->id, $request);
@@ -169,11 +195,15 @@ class AuthController extends Controller
             'password' => ['required'],
         ]);
 
+        $lockKey = $this->loginKey('rental', $request);
+        $this->refuseIfLockedOut($lockKey);
+
         $user = User::where('email', $request->email)
                     ->where('role', 'rental_admin')
                     ->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
+            RateLimiter::hit($lockKey, self::LOCKOUT_SECONDS);
             $this->logSecurityEvent('login_fail', null, $request, ['email' => $request->email, 'role' => 'rental_admin']);
             throw ValidationException::withMessages([
                 'email' => ['Invalid email or password.'],
@@ -185,6 +215,7 @@ class AuthController extends Controller
             return response()->json(['message' => 'Account suspended. Contact your administrator.'], 403);
         }
 
+        RateLimiter::clear($lockKey);
         $user->tokens()->delete();
         $token = $user->createToken('rental-token', ['rental'])->plainTextToken;
         $this->logSecurityEvent('login_success', $user->id, $request);

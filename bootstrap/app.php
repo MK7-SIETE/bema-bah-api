@@ -17,6 +17,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // does not find one, and answers 500 instead of 401. With no redirect, it answers 401 JSON.
         $middleware->redirectGuestsTo(fn () => null);
 
+        // A general request limit for the whole API (defined in AppServiceProvider as 'api').
+        $middleware->throttleApi('api');
+
         $middleware->use([
             \Illuminate\Http\Middleware\TrustProxies::class,
             \Illuminate\Http\Middleware\HandleCors::class,
