@@ -139,6 +139,7 @@ Route::middleware(['auth:sanctum', 'super.auth'])->prefix('super')->group(functi
 
     // Rental requests
     Route::get('rental-requests',                           [RentalRequestController::class, 'superIndex']);
+    Route::get('rental-requests/new-count',                 [RentalRequestController::class, 'newCount']);
     Route::patch('rental-requests/{rentalRequest}/forward', [RentalRequestController::class, 'forward']);
     Route::patch('rental-requests/{rentalRequest}/status',  [RentalRequestController::class, 'superStatus']);
 
