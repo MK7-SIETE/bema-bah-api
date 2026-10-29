@@ -142,6 +142,10 @@ Route::middleware(['auth:sanctum', 'super.auth'])->prefix('super')->group(functi
     Route::get('rental-requests/new-count',                 [RentalRequestController::class, 'newCount']);
     Route::patch('rental-requests/{rentalRequest}/forward', [RentalRequestController::class, 'forward']);
     Route::patch('rental-requests/{rentalRequest}/status',  [RentalRequestController::class, 'superStatus']);
+    Route::get('rental-requests/{rentalRequest}/message',         [RentalRequestController::class, 'message']);
+    Route::patch('rental-requests/{rentalRequest}/whatsapp-sent', [RentalRequestController::class, 'whatsappSent']);
+    Route::post('rental-requests/bulk-delete',                    [RentalRequestController::class, 'bulkDestroy']);
+    Route::delete('rental-requests/{rentalRequest}',              [RentalRequestController::class, 'destroy']);
 
     // Full data access — the super admin uses the SAME car and message actions the dealers use.
     // The "owner or super admin" rule lives inside the controllers, so nothing is written twice.

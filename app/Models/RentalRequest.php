@@ -28,7 +28,8 @@ class RentalRequest extends Model
         'pickup_location',   // old requests only (before the trip details existed)
         'notes',
         'status',
-        'forwarded_at',
+        'forwarded_at',      // when it was sent to the rental dealer's PANEL (empty = the dealer cannot see it)
+        'whatsapp_sent_at',  // when the Super admin opened WhatsApp for it (we cannot know if Send was pressed)
     ];
 
     protected $casts = [
@@ -37,6 +38,7 @@ class RentalRequest extends Model
         'days'         => 'integer',
         'with_driver'  => 'boolean',
         'forwarded_at' => 'datetime',
+        'whatsapp_sent_at' => 'datetime',
     ];
 
     // Message sent to the rental admin by email and WhatsApp.

@@ -89,7 +89,9 @@ class RentalRequestController extends Controller
         return response()->json(['count' => RentalRequest::where('status', 'new')->count()]);
     }
 
-    // ── SUPER ADMIN: forward a request to the rental admin ──
+    // ── SUPER ADMIN: send a request to the rental dealer's PANEL (also emails them) ──
+    // The WhatsApp message is a separate step (message() and whatsappSent() below). The two
+    // whatsapp_* answers are kept so the older Super admin screen keeps working during a deploy.
     public function forward(RentalRequest $rentalRequest)
     {
         if (! in_array($rentalRequest->status, ['new', 'forwarded'], true)) {
@@ -130,12 +132,63 @@ class RentalRequestController extends Controller
         return response()->json($rentalRequest);
     }
 
+    // ── SUPER ADMIN: the WhatsApp message for a request (the screen lets you edit it before sending) ──
+    public function message(RentalRequest $rentalRequest)
+    {
+        $admin = $rentalRequest->rentalAdmin;
+
+        return response()->json([
+            'text'            => $rentalRequest->messageText(),
+            'dealer_name'     => $admin?->name,
+            'whatsapp_number' => $admin?->whatsappNumber(),
+        ]);
+    }
+
+    // ── SUPER ADMIN: remember that WhatsApp was opened for this request ──
+    // A new request becomes "forwarded". A request that is already confirmed, declined or completed keeps its status.
+    public function whatsappSent(RentalRequest $rentalRequest)
+    {
+        $changes = ['whatsapp_sent_at' => now()];
+        if ($rentalRequest->status === 'new') {
+            $changes['status'] = 'forwarded';
+        }
+
+        $rentalRequest->update($changes);
+        return response()->json($rentalRequest->fresh());
+    }
+
+    // ── SUPER ADMIN: delete one request (a confirmed one must be completed or declined first) ──
+    public function destroy(RentalRequest $rentalRequest)
+    {
+        if ($rentalRequest->status === 'confirmed') {
+            return response()->json(['message' => 'This request is confirmed. Mark it completed or declined before deleting it.'], 422);
+        }
+
+        $rentalRequest->delete();
+        return response()->json(['message' => 'Request deleted.']);
+    }
+
+    // ── SUPER ADMIN: delete several at once. Confirmed ones are skipped, never deleted. ──
+    public function bulkDestroy(Request $request)
+    {
+        $data = $request->validate([
+            'ids'   => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $ids     = array_values(array_unique($data['ids']));
+        $deleted = RentalRequest::whereIn('id', $ids)->where('status', '!=', 'confirmed')->delete();
+
+        return response()->json(['deleted' => $deleted, 'skipped' => count($ids) - $deleted]);
+    }
+
     // ── RENTAL ADMIN: requests forwarded to me (paged) ──
     public function rentalIndex(Request $request)
     {
         return response()->json(
             RentalRequest::with('car:id,make,model,year,location,rental_price_per_day')
                 ->where('rental_admin_id', $request->user()->id)
+                ->whereNotNull('forwarded_at')   // only requests the Super admin sent to the panel
                 ->whereIn('status', ['forwarded', 'confirmed', 'declined', 'completed'])
                 ->latest()
                 ->paginate(20)
@@ -146,7 +199,7 @@ class RentalRequestController extends Controller
     // ── RENTAL ADMIN: update my request's status ───────
     public function rentalStatus(Request $request, RentalRequest $rentalRequest)
     {
-        if ($rentalRequest->rental_admin_id !== $request->user()->id || $rentalRequest->status === 'new') {
+        if ($rentalRequest->rental_admin_id !== $request->user()->id || $rentalRequest->forwarded_at === null) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
