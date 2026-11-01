@@ -7,23 +7,21 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class HeroImageController extends Controller
 {
-    // PUBLIC — all hero images
-    public function index()
+    // PUBLIC — the hero images of ONE page: ?page=rentals gives the rentals photos,
+    // anything else (or nothing) gives the home page photos.
+    public function index(Request $request)
     {
-        return response()->json(
-            HeroImage::orderBy('sort_order')->get()
-        );
+        return response()->json($this->forPage($request)->get());
     }
 
-    // SUPER — list all
-    public function superIndex()
+    // SUPER — list the images of one page (same ?page= rule)
+    public function superIndex(Request $request)
     {
-        return response()->json(
-            HeroImage::orderBy('sort_order')->get()
-        );
+        return response()->json($this->forPage($request)->get());
     }
 
     // SUPER — upload to Cloudinary
@@ -31,7 +29,16 @@ class HeroImageController extends Controller
     {
         $request->validate([
             'image' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:8192'],
+            'page'  => ['nullable', Rule::in(HeroImage::PAGES)],
         ]);
+
+        $page = $request->input('page') ?: 'home';
+
+        if (HeroImage::where('page', $page)->count() >= HeroImage::MAX_PER_PAGE) {
+            return response()->json([
+                'message' => 'The ' . $page . ' page already has ' . HeroImage::MAX_PER_PAGE . ' photos. Delete one first.',
+            ], 422);
+        }
 
         $file = $request->file('image');
         $contentHash = hash_file('sha256', $file->getRealPath());
@@ -73,8 +80,8 @@ class HeroImageController extends Controller
         $publicId = $response->json('public_id');
 
         try {
-            $hero = DB::transaction(function () use ($publicId, $file, $cloudUrl, $contentHash) {
-                $nextSort = (HeroImage::lockForUpdate()->max('sort_order') ?? 0) + 1;
+            $hero = DB::transaction(function () use ($publicId, $file, $cloudUrl, $contentHash, $page) {
+                $nextSort = (HeroImage::where('page', $page)->lockForUpdate()->max('sort_order') ?? 0) + 1;
 
                 return HeroImage::create([
                     'filename'      => $publicId,
@@ -82,6 +89,7 @@ class HeroImageController extends Controller
                     'url'           => $cloudUrl,
                     'sort_order'    => $nextSort,
                     'content_hash'  => $contentHash,
+                    'page'          => $page,
                 ]);
             });
         } catch (\Throwable $e) {
@@ -138,5 +146,17 @@ class HeroImageController extends Controller
 
         $heroImage->delete();
         return response()->json(['message' => 'Deleted.']);
+    }
+
+    // Which page the request is about: only the known pages are accepted, anything else means "home".
+    private function pageOf(Request $request): string
+    {
+        $page = (string) $request->query('page', 'home');
+        return in_array($page, HeroImage::PAGES, true) ? $page : 'home';
+    }
+
+    private function forPage(Request $request)
+    {
+        return HeroImage::where('page', $this->pageOf($request))->orderBy('sort_order');
     }
 }
