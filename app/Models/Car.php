@@ -15,6 +15,9 @@ class Car extends Model
 
     public const SOURCE_COUNTRIES = ['Local', 'Australia', 'UAE', 'South Africa'];
 
+    // Must match DUTY_STATUSES in the dealer car form (AddEditCar.jsx) exactly.
+    public const DUTY_STATUSES = ['Duty paid', 'Duty not paid', 'Duty exempt', 'Under bond'];
+
     protected $fillable = [
         'user_id',
         'listing_type',
@@ -30,6 +33,7 @@ class Car extends Model
         'fuel',
         'transmission',
         'color',
+        'interior_color',
         'body_type',
         'condition',
         'engine',
@@ -42,6 +46,8 @@ class Car extends Model
         'vin',
         'previous_owners',
         'registration_status',
+        'duty_status',
+        'fuel_tank_litres',
         'description',
         'features',
         'is_featured',
@@ -54,6 +60,7 @@ class Car extends Model
         'is_available' => 'boolean',
         'hidden_by_admin' => 'boolean',  // the super admin's switch; never set by a dealer
         'is_classic'   => 'boolean',
+        'fuel_tank_litres' => 'integer',
     ];
 
     // Included automatically whenever a car is returned as JSON.
