@@ -25,20 +25,21 @@ Route::get('cars',               [CarController::class, 'index']);
 Route::get('cars/featured/list', [CarController::class, 'featured']);
 Route::get('classics',           [CarController::class, 'classics']);
 Route::get('cars/{car}',         [CarController::class, 'show']);
-Route::post('cars/{car}/view',   [\App\Http\Controllers\Api\CarViewController::class, 'store'])->middleware('throttle:car-views');
-Route::post('messages',          [MessageController::class, 'store'])->middleware('throttle:public-messages');
+Route::post('cars/{car}/view',   [\App\Http\Controllers\Api\CarViewController::class, 'store'])->middleware('throttle:60,1');
+Route::post('messages',          [MessageController::class, 'store']);
 Route::get('rentals',            [RentalCarController::class, 'publicIndex']);
 Route::get('rentals/{car}',      [RentalCarController::class, 'publicShow']);
-Route::post('rental-requests',   [RentalRequestController::class, 'store'])->middleware('throttle:rental-requests');
+Route::post('rental-requests',   [RentalRequestController::class, 'store'])->middleware('throttle:6,1');
 Route::get('hero-images',        [HeroImageController::class, 'index']);
 Route::get('testimonials',       [TestimonialController::class, 'index']);
-Route::post('testimonials',      [TestimonialController::class, 'store'])->middleware('throttle:public-reviews');
-Route::post('subscribe',         [SubscriberController::class, 'subscribe'])->middleware('throttle:public-subscribe');
+Route::post('testimonials',      [TestimonialController::class, 'store']);
+Route::post('subscribe',         [SubscriberController::class, 'subscribe']);
 Route::get('unsubscribe/{token}',[SubscriberController::class, 'unsubscribe']);
+Route::get('car-filters',        [\App\Http\Controllers\Api\CarFilterController::class, 'index'])->middleware('throttle:60,1');
 Route::get('/health', fn () => response()->json(['status' => 'ok']));
 
 // ── Dealer auth ────────────────────────────────────────────────
-Route::post('dealer/login',  [AuthController::class, 'dealerLogin'])->middleware('throttle:login-attempts');
+Route::post('dealer/login',  [AuthController::class, 'dealerLogin']);
 Route::post('dealer/logout', [AuthController::class, 'dealerLogout'])->middleware(['auth:sanctum', 'dealer.auth']);
 
 // ── Dealer protected routes ────────────────────────────────────
@@ -78,7 +79,7 @@ Route::middleware(['auth:sanctum', 'dealer.auth'])->prefix('dealer')->group(func
 });
 
 // ── Rental admin auth ──────────────────────────────────────────
-Route::post('rental/login',  [AuthController::class, 'rentalLogin'])->middleware('throttle:login-attempts');
+Route::post('rental/login',  [AuthController::class, 'rentalLogin'])->middleware('throttle:10,1');
 Route::post('rental/logout', [AuthController::class, 'rentalLogout'])->middleware(['auth:sanctum', 'rental.auth']);
 
 // ── Rental admin protected routes ──────────────────────────────
@@ -87,7 +88,6 @@ Route::middleware(['auth:sanctum', 'rental.auth'])->prefix('rental')->group(func
 
     // Rental cars
     Route::get('cars',                [RentalCarController::class, 'index']);
-    Route::get('cars/{car}',         [RentalCarController::class, 'show']);
     Route::post('cars',               [RentalCarController::class, 'store']);
     Route::put('cars/{car}',          [RentalCarController::class, 'update']);
     Route::delete('cars/{car}',       [RentalCarController::class, 'destroy']);
@@ -104,7 +104,7 @@ Route::middleware(['auth:sanctum', 'rental.auth'])->prefix('rental')->group(func
 });
 
 // ── Super admin auth ───────────────────────────────────────────
-Route::post('super/login',  [AuthController::class, 'superLogin'])->middleware('throttle:login-attempts');
+Route::post('super/login',  [AuthController::class, 'superLogin']);
 Route::post('super/logout', [AuthController::class, 'superLogout'])->middleware(['auth:sanctum', 'super.auth']);
 
 // ── Super admin protected routes ───────────────────────────────
@@ -117,6 +117,7 @@ Route::middleware(['auth:sanctum', 'super.auth'])->prefix('super')->group(functi
     Route::get('hero-images',                [HeroImageController::class, 'superIndex']);
     Route::post('hero-images',               [HeroImageController::class, 'store']);
     Route::delete('hero-images/{heroImage}', [HeroImageController::class, 'destroy']);
+    Route::patch('hero-images/{heroImage}',  [\App\Http\Controllers\Api\HeroCaptionController::class, 'update']);
 
     // Profile & config
     Route::get('profile', [ProfileController::class,    'show']);
@@ -139,13 +140,8 @@ Route::middleware(['auth:sanctum', 'super.auth'])->prefix('super')->group(functi
 
     // Rental requests
     Route::get('rental-requests',                           [RentalRequestController::class, 'superIndex']);
-    Route::get('rental-requests/new-count',                 [RentalRequestController::class, 'newCount']);
     Route::patch('rental-requests/{rentalRequest}/forward', [RentalRequestController::class, 'forward']);
     Route::patch('rental-requests/{rentalRequest}/status',  [RentalRequestController::class, 'superStatus']);
-    Route::get('rental-requests/{rentalRequest}/message',         [RentalRequestController::class, 'message']);
-    Route::patch('rental-requests/{rentalRequest}/whatsapp-sent', [RentalRequestController::class, 'whatsappSent']);
-    Route::post('rental-requests/bulk-delete',                    [RentalRequestController::class, 'bulkDestroy']);
-    Route::delete('rental-requests/{rentalRequest}',              [RentalRequestController::class, 'destroy']);
 
     // Full data access — the super admin uses the SAME car and message actions the dealers use.
     // The "owner or super admin" rule lives inside the controllers, so nothing is written twice.
