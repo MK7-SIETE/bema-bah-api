@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Car;
 use App\Services\CarImageService;
 use App\Support\CarInput;
+use App\Support\CarListCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -33,7 +34,7 @@ class CarController extends Controller
         $perPage = min(max((int) $request->input('per_page', 12), 1), 48);
 
         return response()->json(
-            $this->searchAndPaginate($query, $request, $perPage, ['images'])
+            CarListCache::listing($request, fn () => $this->searchAndPaginate($query, $request, $perPage, ['images']))
         );
     }
 
@@ -54,13 +55,13 @@ class CarController extends Controller
     // ── PUBLIC: featured cars ──────────────────────────
     public function featured()
     {
-        $cars = Car::with('images')
+        $cars = CarListCache::remember('featured', fn () => Car::with('images')
                    ->visible()
                    ->where('listing_type', 'sale')
                    ->where('is_featured', true)
                    ->latest()
                    ->limit(6)
-                   ->get();
+                   ->get());
         return response()->json($cars);
     }
 
@@ -103,6 +104,7 @@ class CarController extends Controller
             }
         }
 
+        CarListCache::bump();
         return response()->json($car->load('images'), 201);
     }
 
@@ -123,6 +125,7 @@ class CarController extends Controller
         }
 
         $car->update($data);
+        CarListCache::bump();
         return response()->json($car->load('images'));
     }
 
@@ -138,6 +141,7 @@ class CarController extends Controller
         $car->delete(); // image rows are removed with the car
         $images->deleteRemoteAfterResponse($urls);
 
+        CarListCache::bump();
         return response()->json(['message' => 'Car deleted.']);
     }
 
@@ -156,6 +160,7 @@ class CarController extends Controller
         } else {
             $car->update(['is_available' => ! $car->is_available]);
         }
+        CarListCache::bump();
         return response()->json($car);
     }
 
@@ -186,6 +191,7 @@ class CarController extends Controller
             $affected = Car::whereIn('id', $data['ids'])->update($switches[$data['action']]);
         }
 
+        CarListCache::bump();
         return response()->json(['affected' => $affected]);
     }
 
