@@ -240,6 +240,7 @@ class CarController extends Controller
             'vin'                 => ['nullable', 'string', 'max:30'],
             'previous_owners'     => ['nullable', 'integer', 'min:0', 'max:20'],
             'registration_status' => ['nullable', 'string', 'max:60'],
+            'warranty'            => ['nullable', 'string', 'max:120'],
             'duty_status'         => ['nullable', Rule::in(Car::DUTY_STATUSES)],
             'source_country'      => ['nullable', Rule::in(Car::SOURCE_COUNTRIES)],
             'is_classic'          => ['boolean'],

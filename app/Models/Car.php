@@ -46,6 +46,7 @@ class Car extends Model
         'vin',
         'previous_owners',
         'registration_status',
+        'warranty',
         'duty_status',
         'fuel_tank_litres',
         'description',
