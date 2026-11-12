@@ -13,7 +13,7 @@ class Car extends Model
         'Hatchback', 'Coupe', 'Wagon', 'Convertible', 'Truck',
     ];
 
-    public const SOURCE_COUNTRIES = ['Local', 'Australia', 'UAE', 'South Africa'];
+    public const SOURCE_COUNTRIES = ['Local', 'Australia', 'UAE', 'South Africa', 'Japan'];
 
     // Must match DUTY_STATUSES in the dealer car form (AddEditCar.jsx) exactly.
     public const DUTY_STATUSES = ['Duty paid', 'Duty not paid', 'Duty exempt', 'Under bond'];
