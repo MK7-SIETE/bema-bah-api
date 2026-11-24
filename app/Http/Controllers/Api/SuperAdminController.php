@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Car;
 use App\Models\SiteConfig;
 use App\Models\User;
+use App\Rules\PhoneNumber;
 use App\Services\CarImageService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -70,14 +71,14 @@ class SuperAdminController extends Controller
         $data = $request->validate([
             'name'     => ['required', 'string', 'max:200'],
             'email'    => ['required', 'email', 'unique:users'],
-            'phone'    => ['required', 'string', 'max:30'],
+            'phone'    => ['required', 'string', 'max:30', new PhoneNumber],
             'password' => ['required', 'string', 'min:8'],
         ]);
 
         $user = User::create([
             'name'      => $data['name'],
             'email'     => $data['email'],
-            'phone'     => $data['phone'],
+            'phone'     => PhoneNumber::normalize($data['phone']),
             'password'  => Hash::make($data['password']),
             'role'      => 'rental_admin',
             'is_active' => true,
@@ -92,8 +93,12 @@ class SuperAdminController extends Controller
 
         $data = $request->validate([
             'name'  => ['sometimes', 'string', 'max:200'],
-            'phone' => ['sometimes', 'string', 'max:30'],
+            'phone' => ['sometimes', 'required', 'string', 'max:30', new PhoneNumber],
         ]);
+
+        if (isset($data['phone'])) {
+            $data['phone'] = PhoneNumber::normalize($data['phone']);
+        }
 
         $user->update($data);
         return response()->json($user);
@@ -125,8 +130,8 @@ class SuperAdminController extends Controller
     {
         $data = $request->validate([
             'dealership_name' => ['sometimes', 'string', 'max:200'],
-            'phone'           => ['sometimes', 'string', 'max:30'],
-            'whatsapp'        => ['sometimes', 'nullable', 'string', 'max:30'],
+            'phone'           => ['sometimes', 'required', 'string', 'max:30', new PhoneNumber],
+            'whatsapp'        => ['sometimes', 'nullable', 'string', 'max:30', new PhoneNumber],
             'email'           => ['sometimes', 'email'],
             'address'         => ['sometimes', 'string'],
             'city'            => ['sometimes', 'nullable', 'string', 'max:100'],
@@ -136,6 +141,12 @@ class SuperAdminController extends Controller
             'instagram'       => ['nullable', 'url'],
             'twitter'         => ['nullable', 'url'],
         ]);
+
+        foreach (['phone', 'whatsapp'] as $field) {
+            if (! empty($data[$field])) {
+                $data[$field] = PhoneNumber::normalize($data[$field]);
+            }
+        }
 
         foreach ($data as $key => $value) {
             SiteConfig::set($key, $value ?? '');

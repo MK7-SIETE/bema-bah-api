@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Car;
 use App\Models\Message;
 use App\Models\User;
+use App\Rules\PhoneNumber;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,13 +29,14 @@ class MessageController extends Controller
         $data = $request->validate([
             'name'    => ['required', 'string', 'max:150'],
             'email'   => ['required', 'email', 'max:200'],
-            'phone'   => ['required', 'string', 'max:30'],
+            'phone'   => ['required', 'string', 'max:30', new PhoneNumber],
             'subject' => ['nullable', 'string', 'max:200'],
             'message' => ['required', 'string', 'max:3000'],
             'car_id'  => ['nullable', 'exists:cars,id'],
             'type'    => ['nullable', 'in:general,car_enquiry,import_request'],
         ]);
 
+        $data['phone']   = PhoneNumber::normalize($data['phone']);
         $data['is_read'] = false;
         $data['type']    = $data['type'] ?? (!empty($data['car_id']) ? 'car_enquiry' : 'general');
         $data['subject'] = $data['subject'] ?? 'General enquiry';

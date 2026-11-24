@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\SiteConfig;
+use App\Rules\PhoneNumber;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -47,8 +48,8 @@ class ProfileController extends Controller
         if ($isSuper) {
             $rules += [
                 'dealership_name'     => ['sometimes', 'string', 'max:200'],
-                'phone'               => ['sometimes', 'string', 'max:30'],
-                'whatsapp'            => ['nullable', 'string', 'max:30'],
+                'phone'               => ['sometimes', 'required', 'string', 'max:30', new PhoneNumber],
+                'whatsapp'            => ['nullable', 'string', 'max:30', new PhoneNumber],
                 'email'               => ['sometimes', 'email', 'max:200'],
                 'address'             => ['sometimes', 'string', 'max:400'],
                 'city'                => ['nullable', 'string', 'max:100'],
@@ -65,6 +66,13 @@ class ProfileController extends Controller
         }
 
         $data = $request->validate($rules);
+
+        // Phone numbers are saved in one clean international form (+260...).
+        foreach (['phone', 'whatsapp'] as $field) {
+            if (! empty($data[$field])) {
+                $data[$field] = PhoneNumber::normalize($data[$field]);
+            }
+        }
 
         if (isset($data['hours']) && strlen((string) json_encode($data['hours'])) > 5000) {
             throw ValidationException::withMessages(['hours' => ['The opening hours are too long.']]);

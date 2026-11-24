@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Car;
 use App\Models\RentalRequest;
 use App\Models\User;
+use App\Rules\PhoneNumber;
 use App\Support\RentalRequestAlert;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -20,7 +21,7 @@ class RentalRequestController extends Controller
         $data = $request->validate([
             'car_id'           => ['required', 'integer', 'exists:cars,id'],
             'customer_name'    => ['required', 'string', 'max:150'],
-            'customer_phone'   => ['required', 'string', 'max:30', 'regex:/^\+?\(?[0-9][0-9\s\-()]{5,28}$/'],
+            'customer_phone'   => ['required', 'string', 'max:30', new PhoneNumber],
             'customer_email'   => ['nullable', 'email', 'max:150'],
             'pickup_date'      => ['required', 'date_format:Y-m-d', 'after_or_equal:today'],
             'days'             => ['required', 'integer', 'min:1', 'max:60'],
@@ -31,6 +32,8 @@ class RentalRequestController extends Controller
             'destination'      => ['nullable', 'string', 'max:150'],
             'notes'            => ['nullable', 'string', 'max:1000'],
         ]);
+
+        $data['customer_phone'] = PhoneNumber::normalize($data['customer_phone']);
 
         // Same public-visibility rule as the website: switched on AND owner account active.
         $car = Car::visible()
